@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Graph Editor</title>
+<style>
+  :root {
+    --bg: #0f1117; --panel: #171a23; --panel-border: #2a2e3a;
+    --text: #e5e7eb; --text-dim: #9ca3af; --accent: #60a5fa;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; overflow: hidden; }
+
+  #header { position: fixed; top: 0; left: 0; right: 0; height: 56px; background: var(--panel);
+    border-bottom: 1px solid var(--panel-border); display: flex; align-items: center; gap: 10px;
+    padding: 0 16px; z-index: 20; flex-wrap: wrap; }
+  #header h1 { font-size: 15px; font-weight: 600; margin: 0; white-space: nowrap; }
+  #header .project-name { color: var(--accent); }
+  #header .subtitle { color: var(--text-dim); font-size: 12px; }
+  #header .spacer { flex: 1; }
+  .btn { background: #2563eb; color: white; padding: 6px 12px; border-radius: 6px;
+    font-size: 12.5px; cursor: pointer; border: none; white-space: nowrap; }
+  .btn:hover { background: #1d4ed8; }
+  .btn.secondary { background: #374151; }
+  .btn.secondary:hover { background: #4b5563; }
+  .btn.danger { background: #7f1d1d; }
+  .btn.danger:hover { background: #991b1b; }
+  #file-input { display: none; }
+  #load-error { color: #f87171; font-size: 12px; max-width: 260px; }
+  #edit-mode-label { display: flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--text-dim); cursor: pointer; user-select: none; }
+
+  #canvas-container { position: absolute; top: 56px; left: 0; right: 0; bottom: 0; overflow: hidden; cursor: grab; }
+  svg { width: 100%; height: 100%; display: block; }
+
+  .link { fill: none; stroke: #3f4451; stroke-width: 1.5px; }
+  .cross-link { fill: none; stroke: #f59e0b; stroke-width: 1.3px; stroke-dasharray: 4,3; opacity: 0.65; }
+  .cross-link.dangling { stroke: #ef4444; stroke-dasharray: 2,2; opacity: 0.9; }
+  .maps-to-link { fill: none; stroke: #60a5fa; stroke-width: 1.3px; stroke-dasharray: 1,3; stroke-linecap: round; opacity: 0.65; }
+  .maps-to-link.dangling { stroke: #ef4444; stroke-dasharray: 2,2; opacity: 0.9; }
+  .implements-link { fill: none; stroke: #34d399; stroke-width: 1.3px; stroke-dasharray: 5,2,1,2; opacity: 0.65; }
+  .implements-link.dangling { stroke: #ef4444; stroke-dasharray: 2,2; opacity: 0.9; }
+  .calls-link { fill: none; stroke: #38bdf8; stroke-width: 1.3px; stroke-dasharray: 3,2; opacity: 0.65; }
+  .calls-link.dangling { stroke: #ef4444; stroke-dasharray: 2,2; opacity: 0.9; }
+  .data-flow-link { fill: none; stroke: #a3e635; stroke-width: 1.3px; stroke-dasharray: 1,4; stroke-linecap: round; opacity: 0.65; }
+  .data-flow-link.dangling { stroke: #ef4444; stroke-dasharray: 2,2; opacity: 0.9; }
+  .link.edge-highlighted { stroke: #ffffff; stroke-width: 3px; opacity: 1; }
+  .cross-link.edge-highlighted { stroke: #22d3ee; stroke-width: 2.6px; opacity: 1; stroke-dasharray: 6,3; }
+  .maps-to-link.edge-highlighted { stroke: #93c5fd; stroke-width: 2.4px; opacity: 1; stroke-dasharray: 1,3; }
+  .implements-link.edge-highlighted { stroke: #6ee7b7; stroke-width: 2.4px; opacity: 1; stroke-dasharray: 5,2,1,2; }
+  .calls-link.edge-highlighted { stroke: #7dd3fc; stroke-width: 2.4px; opacity: 1; stroke-dasharray: 3,2; }
+  .data-flow-link.edge-highlighted { stroke: #d9f99d; stroke-width: 2.4px; opacity: 1; stroke-dasharray: 1,4; }
+  .link.edge-dimmed, .cross-link.edge-dimmed, .maps-to-link.edge-dimmed, .implements-link.edge-dimmed,
+  .calls-link.edge-dimmed, .data-flow-link.edge-dimmed { opacity: 0.12; }
+
+  .node-box { stroke-width: 3.5px; cursor: pointer; } /* thick border = status color, set per-node in JS */
+  .node-box:hover { stroke: white; stroke-width: 4.5px; }
+  .node-box.selected { stroke: white; stroke-width: 5px; }
+  .node-label { font-size: 11px; fill: #0f1117; font-weight: 600; pointer-events: none; }
+  .node-sublabel { font-size: 9px; fill: #1f2937; pointer-events: none; opacity: 0.75; }
+  .add-child-btn circle { fill: #22c55e; stroke: #052e13; stroke-width: 1px; cursor: pointer; }
+  .add-child-btn text { fill: white; font-size: 14px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+  .add-child-btn { opacity: 0; transition: opacity 0.1s; }
+  .node:hover .add-child-btn { opacity: 1; }
+  .collapse-toggle circle { fill: #374151; stroke: #111827; stroke-width: 1px; cursor: pointer; }
+  .collapse-toggle:hover circle { fill: #4b5563; }
+  .collapse-toggle text { fill: #e5e7eb; font-size: 13px; font-weight: 700; text-anchor: middle; pointer-events: none; }
+  .collapse-toggle .collapse-badge { fill: #fbbf24; font-size: 9px; font-weight: 700; text-anchor: middle; }
+
+  #tooltip { position: fixed; display: none; background: #111827; border: 1px solid var(--panel-border);
+    border-radius: 6px; padding: 8px 10px; font-size: 12px; max-width: 420px; z-index: 30;
+    pointer-events: none; box-shadow: 0 4px 12px rgba(0,0,0,0.4); }
+  #tooltip .sig { font-family: ui-monospace, "SF Mono", Consolas, monospace; color: #93c5fd; }
+  #tooltip .meta { color: var(--text-dim); margin-top: 4px; }
+
+  #detail-panel { position: fixed; top: 56px; right: 0; bottom: 0; width: 440px; background: var(--panel);
+    border-left: 1px solid var(--panel-border); transform: translateX(100%); transition: transform 0.2s ease;
+    overflow-y: auto; z-index: 25; padding: 18px; }
+  #detail-panel.open { transform: translateX(0); }
+  #detail-panel h2 { font-size: 16px; margin: 0 0 4px 0; }
+  #detail-panel .node-id { font-family: ui-monospace, monospace; color: var(--text-dim); font-size: 12px; margin-bottom: 12px; }
+  #detail-panel .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px;
+    font-weight: 600; color: #0f1117; margin-right: 6px; }
+  #detail-panel section { margin-top: 16px; }
+  #detail-panel section h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--text-dim); margin: 0 0 6px 0; }
+  #detail-panel .sig-box { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px;
+    background: #0f1117; border: 1px solid var(--panel-border); border-radius: 6px; padding: 8px 10px;
+    color: #93c5fd; word-break: break-word; white-space: pre-wrap; }
+  #detail-panel .note-box, #detail-panel .stub-box { font-size: 12.5px; line-height: 1.5; color: #d1d5db;
+    background: #0f1117; border: 1px solid var(--panel-border); border-radius: 6px; padding: 8px 10px; white-space: pre-wrap; }
+  #detail-panel .test-card { background: #0f1117; border: 1px solid var(--panel-border); border-radius: 6px;
+    padding: 8px 10px; margin-bottom: 8px; font-size: 12px; }
+  #detail-panel .test-card .tid { color: var(--accent); font-family: ui-monospace, monospace; font-size: 11px; }
+  #detail-panel .test-card .tdesc { color: var(--text-dim); margin: 4px 0; }
+  #detail-panel .test-card pre { margin: 4px 0 0 0; white-space: pre-wrap; font-size: 11px; color: #a3e635; }
+  #detail-panel .close-btn { position: absolute; top: 14px; right: 14px; background: none; border: none;
+    color: var(--text-dim); font-size: 20px; cursor: pointer; line-height: 1; }
+  #detail-panel .close-btn:hover { color: white; }
+  #detail-panel .type-def { font-family: ui-monospace, monospace; font-size: 11.5px; color: #fbbf24;
+    background: #0f1117; border: 1px solid var(--panel-border); border-radius: 6px; padding: 6px 8px; margin-bottom: 4px; }
+  #detail-panel .dep-chip { display: inline-flex; align-items: center; gap: 4px; background: #1e293b; border: 1px solid #334155;
+    border-radius: 4px; padding: 2px 6px; margin: 2px 4px 2px 0; font-size: 11px; font-family: ui-monospace, monospace;
+    color: #93c5fd; }
+  #detail-panel .dep-chip span.dep-name { cursor: pointer; }
+  #detail-panel .dep-chip .rm { cursor: pointer; color: #f87171; font-weight: 700; margin-left: 2px; }
+  #detail-panel .dep-chip.maps-to-chip { background: #1e3a5f; border-color: #2563eb; }
+  #detail-panel .dep-chip.implements-chip { background: #0f3d2e; border-color: #059669; color: #6ee7b7; }
+  #detail-panel .dep-chip.calls-chip { background: #0c2d3d; border-color: #0284c7; color: #7dd3fc; }
+  #detail-panel .dep-chip.data-flow-chip { background: #23350a; border-color: #65a30d; color: #d9f99d; }
+  #detail-panel input[type=text], #detail-panel select, #detail-panel textarea {
+    width: 100%; background: #0f1117; border: 1px solid var(--panel-border); border-radius: 6px;
+    color: var(--text); padding: 6px 8px; font-size: 12.5px; font-family: inherit; margin-top: 4px; }
+  #detail-panel textarea { min-height: 60px; font-family: ui-monospace, monospace; resize: vertical; }
+  #detail-panel label.field-label { font-size: 11px; color: var(--text-dim); display: block; margin-top: 10px; }
+  #detail-panel .save-row { display: flex; gap: 8px; margin-top: 18px; }
+  #detail-panel .form-error { color: #f87171; font-size: 12px; margin-top: 6px; white-space: pre-wrap; }
+  #detail-panel .readonly-note { font-size: 10.5px; color: var(--text-dim); margin-top: 2px; }
+
+  #add-child-popup { position: fixed; display: none; background: #111827; border: 1px solid var(--panel-border);
+    border-radius: 8px; padding: 10px; z-index: 40; box-shadow: 0 4px 16px rgba(0,0,0,0.5); min-width: 220px; }
+  #add-child-popup h4 { margin: 0 0 8px 0; font-size: 12px; color: var(--text-dim); }
+  #add-child-popup button { display: block; width: 100%; text-align: left; background: #1e293b; color: var(--text);
+    border: 1px solid #334155; border-radius: 6px; padding: 6px 10px; margin-bottom: 6px; cursor: pointer; font-size: 12.5px; }
+  #add-child-popup button:hover { background: #334155; }
+  #add-child-popup .none-note { font-size: 12px; color: var(--text-dim); }
+
+  #toast-container { position: fixed; bottom: 20px; right: 20px; z-index: 100;
+    display: flex; flex-direction: column; gap: 8px; align-items: flex-end; pointer-events: none; }
+  .toast { background: #171a23; border: 1px solid #2a2e3a; border-left: 4px solid #60a5fa;
+    border-radius: 6px; padding: 10px 14px; font-size: 13px; color: #e5e7eb; max-width: 360px;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.45); opacity: 0; transform: translateX(24px);
+    transition: opacity 0.2s ease, transform 0.2s ease; word-break: break-word; }
+  .toast.show { opacity: 1; transform: translateX(0); }
+  .toast.success { border-left-color: #22c55e; }
+  .toast.error { border-left-color: #ef4444; }
+  .toast.info { border-left-color: #60a5fa; }
+
+  #legend { position: fixed; bottom: 16px; left: 16px; background: var(--panel); border: 1px solid var(--panel-border);
+    border-radius: 8px; padding: 10px 14px; font-size: 11.5px; z-index: 20; max-width: 220px; }
+  #legend h4 { margin: 0 0 6px 0; font-size: 11px; text-transform: uppercase; color: var(--text-dim); }
+  #legend .row { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
+  #legend .swatch { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  #legend .swatch.status-swatch { background: transparent; border-width: 3px; border-style: solid; }
+  #legend .line-sample { width: 20px; height: 0; border-top: 2px solid #3f4451; display: inline-block; }
+  #legend .line-sample.dashed { border-top: 2px dashed #f59e0b; }
+  #legend .line-sample.dotted { border-top: 2px dotted #60a5fa; }
+  #legend .line-sample.dashdot { border-top: 2px dashed #34d399; }
+  #legend .line-sample.calls { border-top: 2px dashed #38bdf8; }
+  #legend .line-sample.dataflow { border-top: 2px dotted #a3e635; }
+
+  #protocol-modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; z-index: 50;
+    align-items: center; justify-content: center; }
+  #protocol-modal { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 10px;
+    padding: 20px; width: 360px; max-height: 80vh; overflow-y: auto; }
+  #protocol-modal h3 { margin: 0 0 12px 0; font-size: 14px; }
+  #protocol-modal label { font-size: 11px; color: var(--text-dim); display: block; margin-top: 10px; }
+  #protocol-modal input, #protocol-modal select { width: 100%; background: #0f1117; border: 1px solid var(--panel-border);
+    border-radius: 6px; color: var(--text); padding: 6px 8px; font-size: 12.5px; margin-top: 4px; }
+  #protocol-modal .save-row { display: flex; gap: 8px; margin-top: 16px; }
+
+  /* Checkbox dropdown ("Allowed children" / "Template fields") */
+  .ms-dropdown { position: relative; margin-top: 4px; }
+  .ms-toggle { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    background: #0f1117; border: 1px solid var(--panel-border); border-radius: 6px; color: var(--text);
+    padding: 6px 8px; font-size: 12.5px; font-family: inherit; cursor: pointer; text-align: left; }
+  .ms-toggle:hover { border-color: #4b5563; }
+  .ms-toggle-label { color: var(--text-dim); }
+  .ms-toggle-label:not(:empty) { color: var(--text); }
+  .ms-caret { color: var(--text-dim); font-size: 10px; flex-shrink: 0; }
+  .ms-menu { display: none; position: absolute; left: 0; right: 0; top: calc(100% + 4px); z-index: 60;
+    background: #111827; border: 1px solid var(--panel-border); border-radius: 6px; padding: 6px;
+    max-height: 180px; overflow-y: auto; box-shadow: 0 4px 16px rgba(0,0,0,0.5); }
+  .ms-menu.open { display: block; }
+  .ms-option { display: flex; align-items: center; gap: 6px; font-size: 12.5px; padding: 5px 6px;
+    border-radius: 4px; cursor: pointer; }
+  .ms-option:hover { background: #1e293b; }
+  #protocol-modal .ms-option input[type=checkbox] { width: auto; margin: 0; flex-shrink: 0; }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1>Graph editor — <span class="project-name" id="project-name-display">loading…</span></h1>
+  <span class="subtitle" id="node-count-display"></span>
+  <div class="spacer"></div>
+  <span id="load-error"></span>
+  <label id="edit-mode-label"><input type="checkbox" id="edit-mode-toggle"> Edit mode</label>
+  <button class="btn secondary" id="add-protocol-btn" style="display:none">+ Custom protocol type</button>
+  <button class="btn secondary" id="new-graph-btn" style="display:none">New graph</button>
+  <button class="btn secondary" id="prompts-btn" style="display:none">Generate prompts.json</button>
+  <button class="btn" id="save-btn" style="display:none">Save</button>
+  <label class="btn secondary" for="file-input">Load a different graph.yaml…</label>
+  <input type="file" id="file-input" accept=".yaml,.yml,text/yaml">
+</div>
+
+<div id="canvas-container"><svg id="svg"></svg></div>
+<div id="tooltip"></div>
+<div id="detail-panel"><button class="close-btn" id="close-panel">×</button><div id="detail-content"></div></div>
+<div id="add-child-popup"></div>
+<div id="toast-container"></div>
+
+<div id="legend">
+  <h4>Node border = status</h4>
+  <div id="legend-status-list"></div>
+  <h4 style="margin-top:10px">Node fill = protocol type</h4>
+  <div id="legend-protocol-list"></div>
+  <h4 style="margin-top:10px">Edges</h4>
+  <div class="row"><span class="line-sample"></span> decomposition (parent → child)</div>
+  <div class="row"><span class="line-sample dashed"></span> dependency (calls)</div>
+  <div class="row"><span class="line-sample dotted"></span> maps to (DB schema ↔ DTO)</div>
+  <div class="row"><span class="line-sample dashdot"></span> implements (class → contract)</div>
+  <div class="row"><span class="line-sample calls"></span> calls (named operation)</div>
+  <div class="row"><span class="line-sample dataflow"></span> data flow (read/write)</div>
+  <div class="row" style="font-size:10.5px;color:var(--text-dim);margin-top:4px">click a node to highlight its edges</div>
+  <div class="row" style="font-size:10.5px;color:var(--text-dim)">− / + on a node's left corner collapses/expands its subtree</div>
+</div>
+
+<div id="protocol-modal-backdrop"><div id="protocol-modal"></div></div>
+
+<!-- Third-party libraries -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/js-yaml/4.1.0/js-yaml.min.js"></script>
+
+<!-- App layers, load order matters: data -> model -> view -> config -> controller -->
+<script src="default-graph.js"></script>
+<script src="graph-model.js"></script>
+<script src="graph-view.js"></script>
+<script src="graph-config.js"></script>
+<script src="validate-graph.js"></script>
+<script src="prompt-generator.js"></script>
+<script src="graph-controller.js"></script>
+</body>
+</html>

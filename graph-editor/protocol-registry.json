@@ -1,0 +1,53 @@
+{
+  "entrypoint": {
+    "label": "Application entrypoint (backbone)",
+    "color": "#a78bfa",
+    "allowedChildren": ["module", "function"],
+    "fields": [],
+    "leafCapable": false
+  },
+  "module": {
+    "label": "Module (service/package)",
+    "color": "#2dd4bf",
+    "allowedChildren": ["function", "module", "data-model", "contract", "class"],
+    "fields": ["exports", "layout", "language"],
+    "leafCapable": false
+  },
+  "function": {
+    "label": "Function (leaf)",
+    "color": "#fb7185",
+    "allowedChildren": [],
+    "fields": ["params", "returns", "tests", "stub_behavior", "http_method", "route", "errors", "preconditions", "postconditions"],
+    "leafCapable": true
+  },
+  "browser-js": {
+    "label": "Frontend/JS surface",
+    "color": "#fbbf24",
+    "allowedChildren": [],
+    "fields": ["exports", "stub_behavior"],
+    "leafCapable": true,
+    "connectsVia": "dependencies",
+    "language": "javascript"
+  },
+  "data-model": {
+    "label": "Data model (DTO / DB schema / enum / constant)",
+    "color": "#60a5fa",
+    "allowedChildren": [],
+    "fields": ["model_kind", "model_fields", "stub_behavior"],
+    "leafCapable": true
+  },
+  "contract": {
+    "label": "Contract (data-transfer interface)",
+    "color": "#c084fc",
+    "allowedChildren": [],
+    "fields": ["methods"],
+    "leafCapable": false
+  },
+  "class": {
+    "label": "Class (implements a contract)",
+    "color": "#34d399",
+    "allowedChildren": ["function"],
+    "fields": ["fields"],
+    "leafCapable": false
+  }
+}

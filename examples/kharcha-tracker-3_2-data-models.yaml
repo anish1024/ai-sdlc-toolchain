@@ -1,0 +1,899 @@
+project: kharcha-tracker
+backbone: kharcha_api
+default_boundary: module
+nodes:
+  - id: kharcha_api
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: null
+    interface:
+      protocol: entrypoint
+      note: ''
+    contract_version: 0.0.0
+    dependencies:
+      - node: expense_service
+      - node: group_service
+      - node: settlement_engine
+      - node: storage_service
+      - node: models
+      - node: auth_service
+      - node: constants
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: expense_service
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: kharcha_api
+    interface:
+      protocol: module
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: group_service
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: kharcha_api
+    interface:
+      protocol: module
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: settlement_engine
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: kharcha_api
+    interface:
+      protocol: module
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: storage_service
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: kharcha_api
+    interface:
+      protocol: module
+      note: ''
+      exports: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: schema
+      - node: storage_interface
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: models
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: kharcha_api
+    interface:
+      protocol: module
+      note: ''
+      exports: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: constants
+      - node: base
+      - node: expense
+      - node: group
+      - node: payout
+      - node: user
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: base
+    title: base data model
+    status: unsplit
+    boundary: null
+    parent: models
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields: []
+      note: ''
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to: []
+  - id: user
+    title: user model
+    status: unsplit
+    boundary: null
+    parent: models
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: id
+          type:
+            type: uuid
+        - name: name
+          type:
+            type: string
+        - name: password
+          type:
+            type: string
+        - name: email
+          type:
+            type: string
+        - name: avatar_url
+          type:
+            type: string
+      note: >-
+        'user' model captures all valid/active user logins in the system. The
+        'user' database table will also contain all in-active users
+        (soft-deleted)
+    contract_version: 0.0.0
+    dependencies:
+      - node: base
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to:
+      - user_record
+  - id: group
+    title: user-group model
+    status: unsplit
+    boundary: null
+    parent: models
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: id
+          type:
+            type: uuid
+        - name: name
+          type:
+            type: string
+        - name: created_by_user_id
+          type:
+            type: uuid
+        - name: invite_code
+          type:
+            type: string
+        - name: members
+          type:
+            type: list
+            items:
+              type: uuid
+        - name: status
+          type:
+            type: group_status
+        - name: currency
+          type:
+            type: string
+            notes: 'ORIGINAL (unconverted): string (e.g., USD, EUR)'
+        - name: time_created
+          type:
+            type: datetime
+        - name: last_updated
+          type:
+            type: datetime
+      note: ''
+    contract_version: 0.0.0
+    dependencies:
+      - node: base
+      - node: user
+      - node: group_status
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to:
+      - group_record
+  - id: expense
+    title: expense model
+    status: unsplit
+    boundary: null
+    parent: models
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: trans_id
+          type:
+            type: float
+        - name: date_time
+          type:
+            type: datetime
+        - name: expn_ctgry
+          type:
+            type: expense_category
+        - name: expn_desc
+          type:
+            type: string
+        - name: expn_amnt
+          type:
+            type: float
+        - name: expn_splt
+          type:
+            type: list
+            items:
+              type: expense_share
+        - name: paid_by
+          type:
+            type: list
+            items:
+              type: expense_payment
+        - name: expn_bill_screenshot
+          type:
+            type: string
+            notes: must be a valid URL
+        - name: expn_payment_screenshot
+          type:
+            type: string
+            notes: must be a valid URL
+        - name: status
+          type:
+            type: expense_status
+      note: ''
+    contract_version: 0.0.0
+    dependencies:
+      - node: base
+      - node: group
+      - node: expense_status
+      - node: expense_category
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to:
+      - expense_record
+  - id: payout
+    title: payout instructions model
+    status: unsplit
+    boundary: null
+    parent: models
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields: []
+      note: ''
+    contract_version: 0.0.0
+    dependencies:
+      - node: base
+      - node: expense
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to: []
+  - id: schema
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: storage_service
+    interface:
+      protocol: module
+      note: ''
+      exports: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: base_record
+      - node: expense_record
+      - node: group_record
+      - node: audit_log
+      - node: user_record
+      - node: expense_share
+      - node: expense_payment
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: storage_interface
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: storage_service
+    interface:
+      protocol: module
+      note: ''
+      exports: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: schema
+      - node: flat_file
+      - node: sql_lite
+      - node: postgres
+      - node: save_record
+      - node: get_record
+      - node: list_records
+      - node: delete_record
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: flat_file
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: storage_service
+    interface:
+      protocol: class
+      implements:
+        - node: storage_interface
+      note: ''
+      exports: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: flat_file_delete
+      - node: flat_file_get
+      - node: flat_file_list
+      - node: flat_file_save
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: sql_lite
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: storage_service
+    interface:
+      protocol: class
+      implements:
+        - node: storage_interface
+      note: ''
+      exports: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: sqlite_delete
+      - node: sqlite_get
+      - node: sqlite_list
+      - node: sqlite_save
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: postgres
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: storage_service
+    interface:
+      protocol: class
+      implements:
+        - node: storage_interface
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: save_record
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: storage_interface
+    interface:
+      protocol: function
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: get_record
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: storage_interface
+    interface:
+      protocol: function
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: list_records
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: storage_interface
+    interface:
+      protocol: function
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: delete_record
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: storage_interface
+    interface:
+      protocol: function
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: flat_file_save
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: flat_file
+    interface:
+      protocol: function
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: flat_file_get
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: flat_file
+    interface:
+      protocol: function
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: flat_file_list
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: flat_file
+    interface:
+      protocol: function
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: flat_file_delete
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: flat_file
+    interface:
+      protocol: function
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: sqlite_save
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: sql_lite
+    interface:
+      protocol: function
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: sqlite_get
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: sql_lite
+    interface:
+      protocol: function
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: sqlite_list
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: sql_lite
+    interface:
+      protocol: function
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: sqlite_delete
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: sql_lite
+    interface:
+      protocol: function
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: base_record
+    title: common table columns
+    status: unsplit
+    boundary: null
+    parent: schema
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: is_deleted
+          type:
+            type: boolean
+        - name: created_by
+          type:
+            type: uuid
+        - name: created_at
+          type:
+            type: datetime
+        - name: modified_by
+          type:
+            type: uuid
+        - name: modified_at
+          type:
+            type: datetime
+      note: >-
+        These columns will be present in all columns. The 'is_deleted' is for
+        soft deletion and will be usefull for data archiving. The 'created' and
+        'modofied' are for basic auditing. We can have an audit_log table for
+        recording every time a table row is modified. 
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to: []
+  - id: user_record
+    title: user table row
+    status: unsplit
+    boundary: null
+    parent: schema
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: id
+          type:
+            type: uuid
+        - name: name
+          type:
+            type: string
+        - name: password
+          type:
+            type: string
+        - name: email
+          type:
+            type: string
+        - name: avatar_url
+          type:
+            type: string
+        - name: is_active
+          type:
+            type: boolean
+        - name: created_by
+          type:
+            type: uuid
+        - name: created_at
+          type:
+            type: datetime
+        - name: modified_by
+          type:
+            type: uuid
+        - name: modified_at
+          type:
+            type: datetime
+      note: ''
+    contract_version: 0.0.0
+    dependencies:
+      - node: base_record
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to: []
+  - id: group_record
+    title: group table row
+    status: unsplit
+    boundary: null
+    parent: schema
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields: []
+      note: ''
+    contract_version: 0.0.0
+    dependencies:
+      - node: base_record
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to: []
+  - id: expense_record
+    title: expense table row
+    status: unsplit
+    boundary: null
+    parent: schema
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields: []
+      note: ''
+    contract_version: 0.0.0
+    dependencies:
+      - node: base_record
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to: []
+  - id: auth_service
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: kharcha_api
+    interface:
+      protocol: module
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: signup
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: auth_service
+    interface:
+      protocol: function
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: login
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: auth_service
+    interface:
+      protocol: function
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: request_password_reset
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: auth_service
+    interface:
+      protocol: function
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: confirm_password_reset
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: auth_service
+    interface:
+      protocol: function
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: get_current_user
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: auth_service
+    interface:
+      protocol: function
+      signature: ''
+      types: {}
+    contract_version: 0.0.0
+    dependencies:
+      - node: user
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: constants
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: kharcha_api
+    interface:
+      protocol: module
+      note: ''
+      exports: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: expense_category
+      - node: expense_status
+      - node: group_status
+      - node: payout_status
+      - node: system_config
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: expense_category
+    title: expense category enum
+    status: unsplit
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields: []
+      note: >-
+        ENUM = ["GROCERY", "UTILITY", "TRAVEL", "ENTERTAINMENT",
+        "FOOD_N_DINING", "OP_EXP", "CAP_EXP", "ACCOMMODATION", "SETTLEMENT",
+        "CUSTOM"]
+
+
+        # Standard Expenses
+
+            GROCERY = "Fruits, vegetables, toiletries, kitchen items, home decor, "
+
+            UTILITY = "electricity bills, phone bill, fuel, water and ay metered connections"
+
+            TRAVEL = "cab, rail tkt, bus, air tkt"
+
+            ENTERTAINMENT = "Movie, any subscriptions, fun activites"
+
+            FOOD_N_DINING = "Eating out, take-away"
+
+            OP_EXP = "Operating expenses like society Maintenance, allowances, maid salary, pest-control, replacing light bulbs, servicing HVAC/air conditioning units, and minor electrical work. Balcony gardening and Home decor like replacing bedsheets, cushions, curtains can be included here since it maintaining what is already present"
+            
+            CAP_EXP = "Long-term tangible items with a useful life of more than one year like Furniture & Fixtures like Desks, office chairs, sofas, dining tables, beds, and permanent lighting fixtures. Interior designing and structural changes made to a property you own or lease like False ceilings, built-in cabinetry, permanent flooring, safety doors and structural re-modeling. Minor home decor and design fees that do not add permanent structural value belong to OP_EXP like Cushions, rugs, paintings, temporary curtains, and standalone consultation fees for minor cosmetic refreshes"
+
+            ACCOMMODATION = "Rent, hotel, air-bnb, etc."
+            
+        # Special Categories
+            SETTLEMENT = "Settlement"  # Used to record user-to-user payments
+            CUSTOM = "Custom"         # Placeholder for user-defined expenses
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Create this data-model as ENUM
+    maps_to: []
+  - id: expense_status
+    title: expense state enum
+    status: unsplit
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields: []
+      note: ENUM = ["Open", "Locked", "Settled"]
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Create this data-model as ENUM
+    maps_to: []
+  - id: payout_status
+    title: payout state enum
+    status: unsplit
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields: []
+      note: ENUM = ["PENDING", "SETTLED", "FAILED", "CANCELLED"]
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Create this data-model as ENUM
+    maps_to: []
+  - id: group_status
+    title: group state enum
+    status: unsplit
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields: []
+      note: ENUM = ["OPEN", "LOCKED", "SETTLED", "CANCELLED", "PARTIAL_SETTLEMENT"]
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to: []
+  - id: system_config
+    title: system config values
+    status: unsplit
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields: []
+      note: |-
+        # Currency / Decimal Precision (Standard Finance: 2 decimal places)
+        DECIMAL_PRECISION = 2
+
+        # Floating Point Epsilon for Zero Sum Validation (Accounting Tolerance)
+        # Used when checking if Net Debt Matrix Sum == 0
+        FLOAT_EPSILON = 0.01
+
+        # Transaction Limits (if applicable to your DB type)
+        MAX_TRANSACTION_ID = 4294967295  # uint32 range
+        MAX_GROUP_SIZE = 100           # Soft limit on group size
+        MAX_PAYOUTS_PER_BATCH = 100     # Processing batch size
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to: []
+  - id: audit_log
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: schema
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields: []
+      note: ''
+    contract_version: 0.0.0
+    dependencies:
+      - node: base_record
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to: []
+  - id: expense_share
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: schema
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: user_id
+          type:
+            type: uuid
+        - name: percentage
+          type:
+            type: float
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Promoted from expense.expn_splt during the Revision 3 migration.
+  - id: expense_payment
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: schema
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: user_id
+          type:
+            type: uuid
+        - name: amt
+          type:
+            type: float
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Promoted from expense.paid_by during the Revision 3 migration.
+default_language: python

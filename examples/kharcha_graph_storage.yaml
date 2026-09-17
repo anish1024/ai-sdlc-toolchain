@@ -1,0 +1,2140 @@
+project: kharcha-tracker-backend
+backbone: kharcha_api
+default_boundary: module
+nodes:
+  - id: kharcha_api
+    title: "Backend API — Phase 1 MVP backbone"
+    status: stub
+    parent: null
+    dependencies:
+      - node: auth_service
+      - node: group_service
+      - node: expense_service
+      - node: balance_aggregator
+      - node: settlement_engine
+      - node: payment_service
+      - node: notification_service
+      - node: storage_service
+      - node: settlement_instruction
+    interface:
+      protocol: entrypoint
+      note: "See PRD §4.3 for the real endpoint list. No e2e test written yet — see original notes."
+    tests: []
+    notes: "Phase 1 MVP scope only, per PRD §9."
+  - id: auth_service
+    title: User authentication & profile
+    status: stub
+    parent: kharcha_api
+    dependencies:
+      - node: signup
+      - node: login
+      - node: request_password_reset
+      - node: confirm_password_reset
+      - node: get_current_user
+      - node: storage_service
+      - node: auth_result
+    interface:
+      protocol: module
+      note: "Split into 5 leaves below. Social login/2FA deferred (PRD §9 Phase 1, FR-05 Optional)."
+    tests: []
+    notes: "Password/JWT/duplicate-email gaps RESOLVED (proposed) — see individual leaves."
+  - id: signup
+    title: Create a new user account
+    status: contract_defined
+    parent: auth_service
+    interface:
+      protocol: function
+      params:
+        - name: email
+          type:
+            type: string
+        - name: password
+          type:
+            type: string
+        - name: name
+          type:
+            type: string
+      returns:
+        type: user_record
+    stub_behavior: Validates email uniqueness and password strength, creates the user, does NOT auto-login (caller calls login separately).
+    tests:
+      - id: signup-01
+        type: contract
+        description: valid signup creates the user
+        given:
+          email: a@example.com
+          password: correcthorse1
+          name: Alice
+        expect:
+          created: true
+      - id: signup-02
+        type: contract
+        description: duplicate email is rejected
+        given:
+          email: a@example.com
+          password: correcthorse1
+          name: Alice2
+          email_already_registered: true
+        expect_raises: EmailAlreadyRegistered
+      - id: signup-03
+        type: contract
+        description: 'PROPOSED password rule: below minimum strength is rejected'
+        given:
+          email: b@example.com
+          password: abc
+          name: Bob
+        expect_raises: WeakPassword
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+    notes: "PROPOSED (resolves the prior \"password rules\" gap): minimum 8 characters, at least one letter and one number. Simple, common baseline — override freely if a stricter/different policy is wanted.\n"
+    dependencies:
+      - node: save_record
+  - id: login
+    title: Authenticate with email + password
+    status: contract_defined
+    parent: auth_service
+    interface:
+      protocol: function
+      params:
+        - name: email
+          type:
+            type: string
+        - name: password
+          type:
+            type: string
+      returns:
+        type: auth_result
+    stub_behavior: Verifies credentials, returns a JWT on success.
+    tests:
+      - id: login-01
+        type: contract
+        description: correct credentials succeed
+        given:
+          email: a@example.com
+          password: correcthorse1
+        expect:
+          ok: true
+          token_present: true
+      - id: login-02
+        type: contract
+        description: wrong password fails
+        given:
+          email: a@example.com
+          password: wrongpass1
+        expect:
+          ok: false
+          reason: invalid_credentials
+      - id: login-03
+        type: contract
+        description: "PROPOSED: unknown email gives the SAME reason as wrong password — never reveal which part was wrong"
+        given:
+          email: nobody@example.com
+          password: whatever1
+        expect:
+          ok: false
+          reason: invalid_credentials
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+    notes: "PROPOSED (resolves the prior \"JWT expiry\" gap): 24-hour access token expiry, no refresh-token mechanism in Phase 1 — user just logs in again after expiry. Refresh tokens are a reasonable Phase 2+ addition, not MVP-critical. login-03's don't-leak-which-part-was-wrong behavior is a deliberate security choice, not an oversight — worth keeping even if other defaults here get overridden.\n"
+    dependencies:
+      - node: list_records
+  - id: request_password_reset
+    title: Request a password reset
+    status: contract_defined
+    parent: auth_service
+    interface:
+      protocol: function
+      params:
+        - name: email
+          type:
+            type: string
+      returns:
+        type: none
+    stub_behavior: If the email is registered, generates a reset token and sends it. Always returns successfully either way.
+    tests:
+      - id: reset-req-01
+        type: contract
+        description: known email succeeds (no error), reset token generated as a side effect
+        given:
+          email: a@example.com
+        expect:
+          raised: false
+      - id: reset-req-02
+        type: contract
+        description: "PROPOSED: unknown email ALSO succeeds with no error — prevents using this endpoint to enumerate registered emails"
+        given:
+          email: nobody@example.com
+        expect:
+          raised: false
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+    notes: "PROPOSED anti-enumeration default (reset-req-02) — same spirit as login-03. Resolves part of the \"duplicate-email/account enumeration\" surface the original gap note was pointing at.\n"
+    dependencies:
+      - node: list_records
+  - id: confirm_password_reset
+    title: Complete a password reset with a reset token
+    status: contract_defined
+    parent: auth_service
+    dependencies:
+      - node: signup
+      - node: list_records
+      - node: save_record
+    interface:
+      protocol: function
+      note: Reuses signup's password-strength rule (dependency listed so both leaves' contracts stay in sync if that rule changes).
+      params:
+        - name: reset_token
+          type:
+            type: string
+        - name: new_password
+          type:
+            type: string
+      returns:
+        type: none
+    stub_behavior: Validates the reset token, applies the new password strength rule, updates the password.
+    tests:
+      - id: reset-confirm-01
+        type: contract
+        description: valid token + valid new password succeeds
+        given:
+          reset_token: validtoken123
+          new_password: newpassword1
+        expect:
+          raised: false
+      - id: reset-confirm-02
+        type: contract
+        description: invalid or expired token is rejected
+        given:
+          reset_token: expiredorbad
+          new_password: newpassword1
+        expect_raises: InvalidOrExpiredResetToken
+      - id: reset-confirm-03
+        type: contract
+        description: weak new password is rejected, same rule as signup
+        given:
+          reset_token: validtoken123
+          new_password: abc
+        expect_raises: WeakPassword
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+        - signup.interface
+    notes: "PROPOSED reset-token expiry window isn't pinned to a specific duration here (e.g. 1 hour is a common default) — flag if a specific number matters; not load-bearing for the contract shape.\n"
+  - id: get_current_user
+    title: Resolve the current user from a token
+    status: contract_defined
+    parent: auth_service
+    interface:
+      protocol: function
+      params:
+        - name: token
+          type:
+            type: string
+      returns:
+        type: optional
+        of:
+          type: user_record
+    stub_behavior: Validates and decodes the JWT, returns the associated user or None if invalid/expired.
+    tests:
+      - id: cur-01
+        type: contract
+        description: valid, non-expired token returns the user
+        given:
+          token: validtoken
+        expect:
+          found: true
+      - id: cur-02
+        type: contract
+        description: "PROPOSED: invalid/expired token returns None, not an exception — this is meant to be called as a lightweight check from every other service's write operations, so a boolean-ish None is easier to compose with than a try/except at every call site"
+        given:
+          token: expiredorbad
+        expect:
+          found: false
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+    notes: "THIS is the leaf that resolves the retrofit noted in the v3 README (\"every write operation currently takes a bare user_id string with no real authentication behind it\"). See create_group and add_expense below — both now depend on this.\n"
+    dependencies:
+      - node: get_record
+      - node: user_record
+  - id: user_record
+    title: "User (service DTO)"
+    status: contract_defined
+    parent: auth_service
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: id
+          type:
+            type: string
+        - name: email
+          type:
+            type: string
+        - name: name
+          type:
+            type: string
+        - name: avatar_url
+          type:
+            type: optional
+            of:
+              type: string
+      note: "Returned by signup/login/get_current_user. Single source of truth for this shape — those three previously re-declared it inline via interface.types on each function; this node lets them reference it instead."
+    notes: "Promoted out of per-function interface.types because the same shape was being re-typed by hand in three places with no guarantee they'd stay in sync."
+  - id: group_service
+    title: Group creation & membership
+    status: stub
+    parent: kharcha_api
+    dependencies:
+      - node: create_group
+      - node: accept_invite
+      - node: get_group
+      - node: is_member
+      - node: storage_service
+      - node: group_record
+    interface:
+      protocol: module
+      note: Split into 4 leaves below. Leave/delete/history/notes still deferred (Phase 2+).
+    tests: []
+    notes: "Invite-code gap RESOLVED (proposed) — see create_group/accept_invite."
+  - id: create_group
+    title: Create a group
+    status: contract_defined
+    parent: group_service
+    dependencies:
+      - node: get_current_user
+      - node: save_record
+    interface:
+      protocol: function
+      note: created_by_user_id is derived from token via get_current_user, not passed directly by the caller.
+      params:
+        - name: token
+          type:
+            type: string
+        - name: name
+          type:
+            type: string
+        - name: currency
+          type:
+            type: string
+      returns:
+        type: group_record
+    stub_behavior: Resolves the caller via get_current_user(token); creates the record, generates a unique invite_code, members=[resolved_user_id].
+    tests:
+      - id: create-01
+        type: contract
+        description: creator (resolved from token) is the sole initial member
+        given:
+          token: validtoken_for_A
+          name: Trip to Miami
+          currency: USD
+        expect:
+          members:
+            - A
+          invite_code_present: true
+      - id: create-02
+        type: contract
+        description: invite_code is non-empty and matches the proposed format
+        given:
+          token: validtoken_for_B
+          name: Roommates
+          currency: USD
+        expect:
+          invite_code_matches: ^[A-Z0-9]{8}$
+      - id: create-03
+        type: contract
+        description: invalid/expired token is rejected before a group is ever created
+        given:
+          token: expiredorbad
+          name: Trip to Miami
+          currency: USD
+        expect_raises: NotAuthenticated
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+        - get_current_user.interface
+    notes: "RETROFITTED this pass — previously took a bare `created_by_user_id: str` with no real authentication behind it (flagged in the v3 README as a known gap once auth_service existed). Now resolves identity from a real token via get_current_user, with create-03 covering the rejection case. PROPOSED invite_code format unchanged from before: 8-character alphanumeric, globally unique, no expiry in Phase 1.\n"
+  - id: accept_invite
+    title: Join a group via invite code
+    status: contract_defined
+    parent: group_service
+    dependencies:
+      - node: get_group
+      - node: list_records
+      - node: save_record
+    interface:
+      protocol: function
+      params:
+        - name: invite_code
+          type:
+            type: string
+        - name: user_id
+          type:
+            type: string
+      returns:
+        type: group_record
+    stub_behavior: Looks up the group by invite_code, adds user_id to members if not already present.
+    tests:
+      - id: accept-01
+        type: contract
+        description: valid code adds the user as a member
+        given:
+          invite_code: ABC12345
+          user_id: C
+        expect:
+          member_added: true
+      - id: accept-02
+        type: contract
+        description: invalid/unknown code is rejected
+        given:
+          invite_code: NOTREAL1
+          user_id: C
+        expect_raises: InvalidInviteCode
+      - id: accept-03
+        type: contract
+        description: 'PROPOSED: re-accepting an existing membership is idempotent, not an error'
+        given:
+          invite_code: ABC12345
+          user_id: A
+          already_member: true
+        expect:
+          member_added: false
+          error: null
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+    notes: "PROPOSED idempotency rule (accept-03) — PRD doesn't say whether re-joining an already-joined group should error or no-op. Chose no-op as the friendlier default; override if a stricter behavior is wanted.\n"
+  - id: get_group
+    title: Fetch a group by id
+    status: contract_defined
+    parent: group_service
+    interface:
+      protocol: function
+      params:
+        - name: group_id
+          type:
+            type: string
+      returns:
+        type: optional
+        of:
+          type: group_record
+    stub_behavior: Returns the record, or None if not found.
+    tests:
+      - id: get-01
+        type: contract
+        description: existing group is returned
+        given:
+          group_id: g1
+        expect:
+          found: true
+      - id: get-02
+        type: contract
+        description: unknown group returns None, not an error
+        given:
+          group_id: g_nonexistent
+        expect:
+          found: false
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+    notes: "No open gaps — straightforward lookup."
+    dependencies:
+      - node: get_record
+  - id: is_member
+    title: Check group membership
+    status: contract_defined
+    parent: group_service
+    dependencies:
+      - node: get_group
+    interface:
+      protocol: function
+      params:
+        - name: group_id
+          type:
+            type: string
+        - name: user_id
+          type:
+            type: string
+      returns:
+        type: boolean
+    stub_behavior: True if user_id is in the group's members list.
+    tests:
+      - id: mem-01
+        type: contract
+        description: actual member returns true
+        given:
+          group_id: g1
+          user_id: A
+        expect:
+          is_member: true
+      - id: mem-02
+        type: contract
+        description: non-member returns false
+        given:
+          group_id: g1
+          user_id: Z
+        expect:
+          is_member: false
+      - id: mem-03
+        type: contract
+        description: "PROPOSED: nonexistent group returns false rather than raising — 'not a member' covers this case without a separate not-found error"
+        given:
+          group_id: g_nonexistent
+          user_id: A
+        expect:
+          is_member: false
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+    notes: 'PROPOSED (mem-03): folds "group doesn''t exist" into "not a member" rather than a distinct error, since every current caller (add_expense) only cares about the boolean, not why. Revisit if a future caller needs to distinguish the two cases.
+
+      '
+  - id: expense_service
+    title: Expense entry (equal split only, Phase 1)
+    status: stub
+    parent: kharcha_api
+    dependencies:
+      - node: add_expense
+      - node: edit_expense
+      - node: delete_expense
+      - node: list_group_expenses
+      - node: expense_split_calculator
+      - node: storage_service
+      - node: expense_record
+    interface:
+      protocol: module
+      note: Split into 4 leaves + expense_split_calculator below.
+    tests: []
+    notes: "Remainder-handling gap RESOLVED (proposed) — see expense_split_calculator."
+  - id: expense_split_calculator
+    title: Per-expense equal-split calculator
+    status: contract_defined
+    parent: expense_service
+    interface:
+      protocol: function
+      note: Returns each participant's share; values sum EXACTLY to `amount` (no lost cents).
+      params:
+        - name: amount
+          type:
+            type: decimal
+        - name: participant_ids
+          type:
+            type: list
+            items:
+              type: string
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: decimal
+      name: calculate_equal_split
+    stub_behavior: Naive amount/n division, ignoring remainder (placeholder only).
+    tests:
+      - id: split-01
+        type: contract
+        description: 'evenly divisible: $100 across 2 participants'
+        given:
+          amount: 100.0
+          participant_ids:
+            - A
+            - B
+        expect:
+          shares:
+            A: 50.0
+            B: 50.0
+      - id: split-02
+        type: contract
+        description: 'NOT evenly divisible: $100 across 3 -> $33.33 each with $0.01 left over. PROPOSED rule: remainder cents go to participants in list order, starting first, until exhausted. Here that''s participant A getting the extra cent.
+
+          '
+        given:
+          amount: 100.0
+          participant_ids:
+            - A
+            - B
+            - C
+        expect:
+          shares:
+            A: 33.34
+            B: 33.33
+            C: 33.33
+      - id: split-03
+        type: contract
+        description: 'sanity check: shares always sum exactly to the input amount (property, not just this example)'
+        given:
+          amount: 10.0
+          participant_ids:
+            - A
+            - B
+            - C
+            - D
+            - E
+            - F
+            - G
+        expect:
+          sum_of_shares: 10.0
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+    notes: "PROPOSED remainder rule (see file header) — override freely, this is a default chosen to unblock decomposition, not a confirmed product decision.\n"
+  - id: add_expense
+    title: Create an expense
+    status: contract_defined
+    parent: expense_service
+    dependencies:
+      - node: expense_split_calculator
+      - node: is_member
+      - node: get_current_user
+      - node: save_record
+    interface:
+      protocol: function
+      note: "payer_id is resolved from token via get_current_user, not passed directly — the authenticated caller is always the payer."
+      params:
+        - name: token
+          type:
+            type: string
+        - name: group_id
+          type:
+            type: string
+        - name: participant_ids
+          type:
+            type: list
+            items:
+              type: string
+        - name: amount
+          type:
+            type: decimal
+        - name: description
+          type:
+            type: string
+        - name: date
+          type:
+            type: string
+      returns:
+        type: expense_record
+    stub_behavior: Resolves caller via get_current_user(token); validates payer + all participants via is_member(group_id, ...); creates and returns a record with status='pending', shares from expense_split_calculator.
+    tests:
+      - id: add-01
+        type: contract
+        description: valid expense is created with correctly computed shares
+        given:
+          token: validtoken_for_A
+          group_id: g1
+          participant_ids:
+            - A
+            - B
+            - C
+          amount: 100.0
+          description: Dinner
+          date: '2026-08-11'
+        expect:
+          status: pending
+          payer_id: A
+          shares:
+            A: 33.34
+            B: 33.33
+            C: 33.33
+      - id: add-02
+        type: contract
+        description: a participant who isn't a group member is rejected
+        given:
+          token: validtoken_for_A
+          group_id: g1
+          participant_ids:
+            - A
+            - Z
+          amount: 50.0
+          description: Snacks
+          date: '2026-08-11'
+        expect_raises: NotAGroupMember
+      - id: add-03
+        type: contract
+        description: invalid/expired token is rejected before an expense is ever created
+        given:
+          token: expiredorbad
+          group_id: g1
+          participant_ids:
+            - A
+            - B
+          amount: 20.0
+          description: Coffee
+          date: '2026-08-11'
+        expect_raises: NotAuthenticated
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+        - is_member.interface
+        - get_current_user.interface
+    notes: "RETROFITTED this pass — previously took a bare `payer_id: str` with no authentication behind it (flagged as a gap once auth_service existed, resolved the same way as create_group). The earlier group-membership gap is still resolved too (add-02 unchanged in substance, just now reads `payer_id` from the resolved token instead of taking it as raw input).\n"
+  - id: edit_expense
+    title: Edit an expense (only if unlocked)
+    status: contract_defined
+    parent: expense_service
+    dependencies:
+      - node: expense_split_calculator
+      - node: is_expense_locked
+      - node: get_record
+      - node: save_record
+    interface:
+      protocol: function
+      params:
+        - name: expense_id
+          type:
+            type: string
+        - name: updates
+          type:
+            type: map
+            key:
+              type: string
+            value:
+              type: string
+            notes: untyped in original -- review
+      returns:
+        type: expense_record
+    stub_behavior: Rejects if is_expense_locked(expense_id); otherwise applies updates and recomputes shares if amount/participants changed.
+    tests:
+      - id: edit-01
+        type: contract
+        description: editing an unlocked expense recomputes shares
+        given:
+          expense_id: e1
+          locked: false
+          updates:
+            amount: 90.0
+        expect:
+          recomputed: true
+      - id: edit-02
+        type: contract
+        description: editing a locked (settlement-round-covered) expense is rejected
+        given:
+          expense_id: e2
+          locked: true
+          updates:
+            amount: 90.0
+        expect_raises: ExpenseLocked
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+        - is_expense_locked.interface
+    notes: "RESOLVED this pass — previously depended on a vague, undefined \"settled\" status. Now depends on payment_service's is_expense_locked directly, which has a real, coherent definition (locked once covered by any generated settlement round — see its notes). Error renamed ExpenseAlreadySettled -> ExpenseLocked to match the actual concept.\n"
+  - id: delete_expense
+    title: Delete an expense (only if unlocked)
+    status: contract_defined
+    parent: expense_service
+    dependencies:
+      - node: is_expense_locked
+      - node: delete_record
+    interface:
+      protocol: function
+      params:
+        - name: expense_id
+          type:
+            type: string
+      returns:
+        type: none
+    stub_behavior: Rejects if is_expense_locked(expense_id); otherwise deletes.
+    tests:
+      - id: del-01
+        type: contract
+        description: deleting an unlocked expense succeeds
+        given:
+          expense_id: e1
+          locked: false
+        expect:
+          deleted: true
+      - id: del-02
+        type: contract
+        description: deleting a locked expense is rejected
+        given:
+          expense_id: e2
+          locked: true
+        expect_raises: ExpenseLocked
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+        - is_expense_locked.interface
+    notes: "Same retrofit as edit_expense — see its notes for the full reasoning."
+  - id: list_group_expenses
+    title: List all expenses for a group
+    status: contract_defined
+    parent: expense_service
+    interface:
+      protocol: function
+      params:
+        - name: group_id
+          type:
+            type: string
+      returns:
+        type: list
+        items:
+          type: expense_record
+      name: list_expenses
+    stub_behavior: Returns all ExpenseRecords for the group, newest first.
+    tests:
+      - id: list-01
+        type: contract
+        description: empty group returns empty list
+        given:
+          group_id: g_empty
+        expect:
+          expenses: []
+      - id: list-02
+        type: contract
+        description: group with expenses returns them all
+        given:
+          group_id: g1
+          fixture_expense_count: 3
+        expect:
+          expense_count: 3
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+    notes: "Straightforward query — no open gaps."
+    dependencies:
+      - node: list_records
+  - id: balance_aggregator
+    title: Aggregate a group's expenses into net balances per user
+    status: contract_defined
+    parent: kharcha_api
+    dependencies:
+      - node: list_group_expenses
+    interface:
+      protocol: function
+      note: "positive = owed money (paid more than their share), negative = owes money — same sign convention as settlement_engine's input, deliberately, so it feeds straight in."
+      params:
+        - name: group_id
+          type:
+            type: string
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: decimal
+      name: compute_net_balances
+    stub_behavior: Sums each user's (amount_paid_as_payer - sum_of_their_shares_across_all_expenses) in the group.
+    tests:
+      - id: bal-01
+        type: contract
+        description: 'One $100 expense, paid by A, split equally among A/B/C/D (same numbers as settlement_engine''s settle-02 test, so the two nodes'' contracts visibly chain together).
+
+          '
+        given:
+          group_id: g1
+          fixture_expenses:
+            - payer_id: A
+              amount: 100.0
+              shares:
+                A: 25.0
+                B: 25.0
+                C: 25.0
+                D: 25.0
+        expect:
+          balances:
+            A: 75.0
+            B: -25.0
+            C: -25.0
+            D: -25.0
+      - id: bal-02
+        type: contract
+        description: group with no expenses -> everyone at zero
+        given:
+          group_id: g_empty
+          fixture_expenses: []
+        expect:
+          balances: {}
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+        - list_group_expenses.interface
+    notes: "NEW node this pass — didn't exist in v1. Filling a real gap between per-expense splits and group-wide settlement, not present anywhere in the original PRD's architecture table (§6) or FR list. Only settled/paid expenses vs. all expenses being included in the aggregation is itself another open question tied to the same settlement-persistence gap noted on payment_service.\n"
+  - id: settlement_engine
+    title: Settle-up calculation
+    status: contract_defined
+    parent: kharcha_api
+    interface:
+      protocol: function
+      note: "balances: positive = owed, negative = owes, per PRD §4.2."
+      params:
+        - name: balances
+          type:
+            type: map
+            key:
+              type: string
+            value:
+              type: decimal
+      returns:
+        type: list
+        items:
+          type: settlement_instruction
+      name: compute_settlements
+    stub_behavior: "Returns [] for any input (placeholder — real contract below)."
+    tests:
+      - id: settle-01
+        type: contract
+        description: "two-user case, PRD §4.2 example 1"
+        given:
+          balances:
+            A: 100
+            B: -100
+        expect:
+          settlements:
+            - from_user: B
+              to_user: A
+              amount: 100
+      - id: settle-02
+        type: contract
+        description: "four-user case, PRD §4.2 example 2 — same numbers balance_aggregator's bal-01 test produces"
+        given:
+          balances:
+            A: 75
+            B: -25
+            C: -25
+            D: -25
+        expect:
+          settlements:
+            - from_user: B
+              to_user: A
+              amount: 25
+            - from_user: C
+              to_user: A
+              amount: 25
+            - from_user: D
+              to_user: A
+              amount: 25
+      - id: settle-03
+        type: contract
+        description: already-settled group returns no instructions
+        given:
+          balances:
+            A: 0
+            B: 0
+        expect:
+          settlements: []
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+    notes: "PROPOSED Phase-1 scope resolution (see file header): greedy highest-creditor/highest-debtor matching, which reproduces both PRD examples exactly. Global-minimum-transaction guarantees for arbitrary N stay Phase 2 (\"Smart Debts Optimization\" per §9). Input/output is a PURE function — no persistence. See payment_service for why that's now a flagged gap, not just a design note.\n"
+  - id: payment_service
+    title: "Manual settlement marking (Phase 1) — no real payment gateway"
+    status: stub
+    parent: kharcha_api
+    dependencies:
+      - node: generate_settlement_round
+      - node: mark_settlement_paid
+      - node: get_pending_settlements
+      - node: is_expense_locked
+      - node: storage_service
+      - node: settlement_round
+      - node: settlement_record
+    interface:
+      protocol: module
+      note: "Split into 4 leaves below. Real gateway (Stripe Connect) is PRD §9 Phase 3 — out of scope."
+    tests: []
+    notes: "Settlement-persistence gap RESOLVED (proposed design, not confirmed by anyone) — see generate_settlement_round's notes for the full reasoning. Short version: introduced a SettlementRound concept (a batch of SettlementRecords generated together from one balance_aggregator + settlement_engine call), and expenses become permanently locked once included in ANY round, rather than tracking a fuzzy per-expense \"settled\" status. This also resolves what edit_expense/delete_expense's \"settled\" check actually means — see their updated notes below.\n"
+  - id: generate_settlement_round
+    title: Compute and persist a settlement round for a group
+    status: contract_defined
+    parent: payment_service
+    dependencies:
+      - node: balance_aggregator
+      - node: settlement_engine
+      - node: list_group_expenses
+      - node: save_record
+    interface:
+      protocol: function
+      params:
+        - name: group_id
+          type:
+            type: string
+      returns:
+        type: settlement_round
+    stub_behavior: 'Calls balance_aggregator.compute_net_balances(group_id), then settlement_engine.compute_settlements(balances); persists the result as a SettlementRound with one SettlementRecord per instruction; covered_expense_ids = every expense currently in the group (from list_group_expenses) at generation time. Those expenses become permanently locked (see is_expense_locked).
+
+      '
+    tests:
+      - id: gen-round-01
+        type: contract
+        description: same 4-user numbers as settlement_engine's settle-02 and balance_aggregator's bal-01, chained through end to end
+        given:
+          group_id: g1
+        expect:
+          records:
+            - from_user: B
+              to_user: A
+              amount: 25
+            - from_user: C
+              to_user: A
+              amount: 25
+            - from_user: D
+              to_user: A
+              amount: 25
+          status: pending
+      - id: gen-round-02
+        type: contract
+        description: 'PROPOSED: a group with all-zero balances (nothing owed) generates an empty round, not an error'
+        given:
+          group_id: g_all_settled
+        expect:
+          records: []
+          status: completed
+      - id: gen-round-03
+        type: contract
+        description: "PROPOSED: cannot generate a new round while a prior round for the same group is still pending — avoids overlapping/conflicting rounds"
+        given:
+          group_id: g1
+          existing_pending_round: true
+        expect_raises: SettlementRoundAlreadyPending
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+        - balance_aggregator.interface
+        - settlement_engine.interface
+    notes: "This is the node that closes the persistence gap. Reasoning: the PRD's settlement_engine is a pure function with no ids to reference (payment_service's original gap). Rather than bolt an id onto individual instructions ad hoc, introduced a SettlementRound as the actual persisted unit — one round = one \"settle up now\" action, covering whatever expenses exist at that moment. gen-round-03's constraint (no overlapping rounds) is a real design choice, not incidental: without it, two rounds could double-count the same expenses into conflicting balances. All three defaults here are PROPOSED — override freely, but they're internally consistent with each other, not independent guesses.\n"
+  - id: mark_settlement_paid
+    title: Mark one settlement record as paid
+    status: contract_defined
+    parent: payment_service
+    interface:
+      protocol: function
+      params:
+        - name: settlement_record_id
+          type:
+            type: string
+      returns:
+        type: settlement_record
+    stub_behavior: 'Sets the record''s status to ''paid''. If this was the last pending record in its round, the round''s own status flips to ''completed'' as a side effect.
+
+      '
+    tests:
+      - id: mark-paid-01
+        type: contract
+        description: marking a pending record succeeds
+        given:
+          settlement_record_id: r1
+          current_status: pending
+        expect:
+          status: paid
+      - id: mark-paid-02
+        type: contract
+        description: 'PROPOSED: marking an already-paid record is idempotent, not an error (same convention as accept_invite)'
+        given:
+          settlement_record_id: r1
+          current_status: paid
+        expect:
+          status: paid
+          error: null
+      - id: mark-paid-03
+        type: contract
+        description: unknown record id is rejected
+        given:
+          settlement_record_id: r_nonexistent
+        expect_raises: SettlementRecordNotFound
+      - id: mark-paid-04
+        type: contract
+        description: marking the LAST pending record in a round completes the round
+        given:
+          settlement_record_id: r_last_pending_in_round
+          current_status: pending
+        expect:
+          status: paid
+          round_status: completed
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+    notes: "Idempotency default (mark-paid-02) deliberately mirrors accept_invite's — consistent convention across the graph, not a one-off choice."
+    dependencies:
+      - node: get_record
+      - node: save_record
+  - id: get_pending_settlements
+    title: List outstanding settlement records for a group
+    status: contract_defined
+    parent: payment_service
+    interface:
+      protocol: function
+      params:
+        - name: group_id
+          type:
+            type: string
+      returns:
+        type: list
+        items:
+          type: settlement_record
+    stub_behavior: Returns pending (not yet paid) records from the group's current round, if any.
+    tests:
+      - id: pending-01
+        type: contract
+        description: group with an active round returns only its pending records
+        given:
+          group_id: g1
+        expect:
+          count_matches_pending_only: true
+      - id: pending-02
+        type: contract
+        description: group with no active round returns an empty list
+        given:
+          group_id: g_no_round
+        expect:
+          settlements: []
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+    notes: Feeds FR-18 (settlement reminders) and notification_service's pending-settlement push below.
+    dependencies:
+      - node: list_records
+  - id: is_expense_locked
+    title: Check whether an expense is locked by a settlement round
+    status: contract_defined
+    parent: payment_service
+    interface:
+      protocol: function
+      params:
+        - name: expense_id
+          type:
+            type: string
+      returns:
+        type: boolean
+    stub_behavior: True if the expense appears in any SettlementRound's covered_expense_ids ever generated, regardless of that round's own status.
+    tests:
+      - id: locked-01
+        type: contract
+        description: expense never included in any round is not locked
+        given:
+          expense_id: e_never_settled
+        expect:
+          locked: false
+      - id: locked-02
+        type: contract
+        description: expense included in a generated round is locked, even if the round isn't fully paid yet
+        given:
+          expense_id: e_in_pending_round
+        expect:
+          locked: true
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+    notes: "THIS is what gives edit_expense/delete_expense's \"only if unsettled\" (FR-15) a real, coherent definition — locked at ROUND GENERATION time, not at full-payment time, since editing an expense after its numbers were already used to compute settlement instructions would invalidate those instructions. See edit_expense/delete_expense below, now retrofitted.\n"
+    dependencies:
+      - node: list_records
+  - id: notification_service
+    title: Push notifications
+    status: stub
+    parent: kharcha_api
+    dependencies:
+      - node: notify_new_expense
+      - node: notify_pending_settlement
+      - node: storage_service
+    interface:
+      protocol: module
+      note: Split into 2 leaves below. Email summaries (FR-24) deferred (Optional).
+    tests: []
+    notes: "Delivery-mechanism gap RESOLVED (proposed) — see notify_new_expense.\n\nDependency on storage_service added at module level per instruction (\"used by all the other service nodes\") -- but neither notify_new_expense nor notify_pending_settlement currently calls it directly; both are fire-and-forget with no persistence need today. Flagged rather than silently omitted or faked."
+  - id: notify_new_expense
+    title: Notify group members of a new expense
+    status: contract_defined
+    parent: notification_service
+    dependencies:
+      - node: is_member
+    interface:
+      protocol: function
+      params:
+        - name: group_id
+          type:
+            type: string
+        - name: expense_id
+          type:
+            type: string
+        - name: payer_id
+          type:
+            type: string
+      returns:
+        type: none
+    stub_behavior: "Pushes to every group member EXCEPT the payer (PROPOSED — no point notifying someone of their own action)."
+    tests:
+      - id: notify-new-01
+        type: contract
+        description: all members except the payer are notified
+        given:
+          group_id: g1
+          expense_id: e1
+          payer_id: A
+          group_members:
+            - A
+            - B
+            - C
+        expect:
+          notified:
+            - B
+            - C
+      - id: notify-new-02
+        type: contract
+        description: group with only the payer as a member notifies nobody, no error
+        given:
+          group_id: g_solo
+          expense_id: e2
+          payer_id: A
+          group_members:
+            - A
+        expect:
+          notified: []
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+    notes: "PROPOSED (resolves the delivery-mechanism gap): Firebase Cloud Messaging (FCM) for both iOS and Android — a single integration instead of separate APNs (iOS) + FCM (Android) plumbing in Phase 1. Not specified anywhere in PRD §6's tech table; this is a practical default, not confirmed by anyone. The exclude-the-payer behavior (notify-new-01/02) is a separate, also-proposed UX default.\n"
+  - id: notify_pending_settlement
+    title: Notify a user they owe money
+    status: contract_defined
+    parent: notification_service
+    interface:
+      protocol: function
+      params:
+        - name: settlement_record_id
+          type:
+            type: string
+        - name: from_user
+          type:
+            type: string
+        - name: to_user
+          type:
+            type: string
+        - name: amount
+          type:
+            type: decimal
+      returns:
+        type: none
+    stub_behavior: "Pushes to from_user with the amount and to_user, matching the PRD's own example text (\"John, you owe $5\" — PRD §3.5 FR-21).\n"
+    tests:
+      - id: notify-pending-01
+        type: contract
+        description: notifies the debtor, not the creditor
+        given:
+          settlement_record_id: r1
+          from_user: B
+          to_user: A
+          amount: 25.0
+        expect:
+          notified:
+            - B
+    context:
+      include:
+        - self.interface
+        - self.tests
+        - self.stub_behavior
+    notes: "Takes the settlement details directly rather than depending on get_pending_settlements — whichever caller triggers this (likely generate_settlement_round, once it exists as a real implementation, firing one notification per new SettlementRecord) already has this data on hand.\n"
+  - id: storage_service
+    title: "Storage service — Data Access Layer (DAL)"
+    status: stub
+    parent: kharcha_api
+    boundary: module
+    dependencies:
+      - node: save_record
+      - node: get_record
+      - node: list_records
+      - node: delete_record
+      - node: in_memory_backend
+      - node: flat_file_backend
+      - node: sqlite_backend
+    interface:
+      protocol: module
+      note: Split into 4 generic facade leaves + 3 backend sub-modules below.
+    tests: []
+    notes: 'Used by every other service for persistence (per instruction). Uses its own database record models ''storage_service/models/*.*'' -- separate from each service''s own DTO types (ExpenseRecord, GroupRecord, etc.), which the calling service converts to/from a plain dict before/after calling this facade. Supports 3 backend types: In-Memory (dict of lists, one list per table, for TDD unit tests), Flat-File (one JSON file per table under storage_service/flat/<table>.json, storing a JSON list of records), and SQLite (current RDBMS; PROPOSED: use parameterized queries and avoid SQLite-specific syntax so a future Postgres backend can be added without changing this facade''s contract). PROPOSED (not confirmed): backend selection via a STORAGE_BACKEND config/env var (''in_memory'' | ''flat_file'' | ''sqlite''), defaulting to ''in_memory'' -- matches the user''s own stated TDD intent (tests should default to the fast, ephemeral backend; real deployments opt in to flat_file/sqlite explicitly).'
+  - id: user_db_row
+    title: "users table row"
+    status: contract_defined
+    parent: storage_service
+    interface:
+      protocol: data-model
+      model_kind: db_schema
+      model_fields:
+        - name: id
+          type:
+            type: string
+            notes: PK
+        - name: email
+          type:
+            type: string
+            notes: unique index
+        - name: password_hash
+          type:
+            type: string
+        - name: name
+          type:
+            type: string
+        - name: avatar_url
+          type:
+            type: optional
+            of:
+              type: string
+        - name: created_at
+          type:
+            type: string
+      note: "Table name: 'users'. This is the actual persisted shape (any backend -- in-memory/flat-file/sqlite all use this same field set); the auth_service's user_record DTO is derived from it, dropping password_hash and adding no storage-only fields of its own."
+    maps_to:
+      - user_record
+    notes: "First concrete instance of the 'storage_service/models/*.*' shape referenced in storage_service's own notes above -- previously that shape existed only in prose, not as a graph node."
+  - id: save_record
+    title: Save record
+    status: contract_defined
+    parent: storage_service
+    dependencies:
+      - node: in_memory_save
+      - node: flat_file_save
+      - node: sqlite_save
+    interface:
+      protocol: function
+      params:
+        - name: table
+          type:
+            type: string
+        - name: record
+          type:
+            type: map
+            key:
+              type: string
+            value:
+              type: string
+            notes: untyped in original -- review
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: string
+        notes: untyped in original -- review
+    stub_behavior: Dispatches to the configured backend. Generates a UUID for 'id' if the record has none (create); otherwise upserts by existing id (update). Returns the saved record, including its id.
+    tests:
+      - id: save-01
+        type: contract
+        description: a new record (no id) is saved and gets a generated id
+        given:
+          table: users
+          record:
+            name: Alice
+        expect:
+          id_present: true
+          table_matches: users
+    notes: id_present/table_matches follow the same _present/_matches conventions generate_pytest.py already knows how to translate mechanically.
+  - id: get_record
+    title: Get record
+    status: contract_defined
+    parent: storage_service
+    dependencies:
+      - node: in_memory_get
+      - node: flat_file_get
+      - node: sqlite_get
+    interface:
+      protocol: function
+      params:
+        - name: table
+          type:
+            type: string
+        - name: record_id
+          type:
+            type: string
+      returns:
+        type: optional
+        of:
+          type: map
+          key:
+            type: string
+          value:
+            type: string
+          notes: untyped in original -- review
+    stub_behavior: Dispatches to the configured backend. Returns the record if found, None if the table has no record with that id.
+    tests:
+      - id: get-01
+        type: contract
+        description: existing record is returned
+        given:
+          table: users
+          record_id: u1
+        expect:
+          found: true
+      - id: get-02
+        type: contract
+        description: unknown id returns None, not an error
+        given:
+          table: users
+          record_id: nonexistent
+        expect:
+          found: false
+    notes: No open gaps for this one -- straightforward lookup, same shape as get_group's own contract.
+  - id: list_records
+    title: List records
+    status: contract_defined
+    parent: storage_service
+    dependencies:
+      - node: in_memory_list
+      - node: flat_file_list
+      - node: sqlite_list
+    interface:
+      protocol: function
+      params:
+        - name: table
+          type:
+            type: string
+        - name: filter
+          type:
+            type: map
+            key:
+              type: string
+            value:
+              type: string
+            notes: untyped in original -- review
+      returns:
+        type: list
+        items:
+          type: map
+          key:
+            type: string
+          value:
+            type: string
+          notes: untyped in original -- review
+    stub_behavior: Dispatches to the configured backend. Returns every record in the table matching all key/value pairs in filter (empty filter = all records).
+    tests:
+      - id: list-01
+        type: contract
+        description: empty table returns an empty list
+        given:
+          table: users
+          filter: {}
+        expect:
+          records: []
+    notes: 'PROPOSED, genuinely open: testing WITH pre-existing data needs a seed/fixture mechanism this project''s given/expect DSL doesn''t support yet -- flagged honestly rather than faking a test that can''t actually run standalone. This is the operation login/request_password_reset/accept_invite/is_expense_locked all use for ''find by X'' lookups (email, invite_code, token, expense_id) -- filter covers this without needing a 5th operation.'
+  - id: delete_record
+    title: Delete record
+    status: contract_defined
+    parent: storage_service
+    dependencies:
+      - node: in_memory_delete
+      - node: flat_file_delete
+      - node: sqlite_delete
+    interface:
+      protocol: function
+      params:
+        - name: table
+          type:
+            type: string
+        - name: record_id
+          type:
+            type: string
+      returns:
+        type: none
+    stub_behavior: Dispatches to the configured backend. Deletes the record if present.
+    tests:
+      - id: delete-01
+        type: contract
+        description: deleting is a no-op if the record doesn't exist -- no exception
+        given:
+          table: users
+          record_id: nonexistent
+        expect:
+          raised: false
+    notes: 'PROPOSED: idempotent delete (no error on missing record), consistent with accept_invite''s/mark_settlement_paid''s idempotency conventions elsewhere in this graph.'
+  - id: in_memory_backend
+    title: In-memory backend
+    status: stub
+    parent: storage_service
+    boundary: module
+    dependencies:
+      - node: in_memory_save
+      - node: in_memory_get
+      - node: in_memory_list
+      - node: in_memory_delete
+    interface:
+      protocol: module
+      note: Split into in-memory backend's 4 leaves below.
+    tests: []
+    notes: The entire database is a dict of lists (one list per table), held in RAM. Fast, ephemeral -- the default for unit tests (TDD), per the user's stated intent. Nothing persists across process restarts.
+  - id: in_memory_save
+    title: "In-memory backend — save"
+    status: contract_defined
+    parent: in_memory_backend
+    interface:
+      protocol: function
+      params:
+        - name: table
+          type:
+            type: string
+        - name: record
+          type:
+            type: map
+            key:
+              type: string
+            value:
+              type: string
+            notes: untyped in original -- review
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: string
+        notes: untyped in original -- review
+      name: save
+    stub_behavior: Implements save against the in-memory storage mechanism.
+    tests:
+      - id: in_memory-save-01
+        type: contract
+        description: saving a new record returns it with a generated id
+        given:
+          table: users
+          record:
+            name: Alice
+        expect:
+          id_present: true
+    notes: ''
+  - id: in_memory_get
+    title: "In-memory backend — get"
+    status: contract_defined
+    parent: in_memory_backend
+    interface:
+      protocol: function
+      params:
+        - name: table
+          type:
+            type: string
+        - name: record_id
+          type:
+            type: string
+      returns:
+        type: optional
+        of:
+          type: map
+          key:
+            type: string
+          value:
+            type: string
+          notes: untyped in original -- review
+      name: get
+    stub_behavior: Implements get against the in-memory storage mechanism.
+    tests:
+      - id: in_memory-get-01
+        type: contract
+        description: unknown id returns None
+        given:
+          table: users
+          record_id: nonexistent
+        expect:
+          found: false
+    notes: ''
+  - id: in_memory_list
+    title: "In-memory backend — list"
+    status: contract_defined
+    parent: in_memory_backend
+    interface:
+      protocol: function
+      params:
+        - name: table
+          type:
+            type: string
+        - name: filter
+          type:
+            type: map
+            key:
+              type: string
+            value:
+              type: string
+            notes: untyped in original -- review
+      returns:
+        type: list
+        items:
+          type: map
+          key:
+            type: string
+          value:
+            type: string
+          notes: untyped in original -- review
+      name: list
+    stub_behavior: Implements list against the in-memory storage mechanism.
+    tests:
+      - id: in_memory-list-01
+        type: contract
+        description: empty table returns an empty list
+        given:
+          table: users
+          filter: {}
+        expect:
+          records: []
+    notes: ''
+  - id: in_memory_delete
+    title: "In-memory backend — delete"
+    status: contract_defined
+    parent: in_memory_backend
+    interface:
+      protocol: function
+      params:
+        - name: table
+          type:
+            type: string
+        - name: record_id
+          type:
+            type: string
+      returns:
+        type: none
+      name: delete
+    stub_behavior: Implements delete against the in-memory storage mechanism.
+    tests:
+      - id: in_memory-delete-01
+        type: contract
+        description: deleting a nonexistent record does not raise
+        given:
+          table: users
+          record_id: nonexistent
+        expect:
+          raised: false
+    notes: ''
+  - id: flat_file_backend
+    title: Flat-file (JSON) backend
+    status: stub
+    parent: storage_service
+    boundary: module
+    dependencies:
+      - node: flat_file_save
+      - node: flat_file_get
+      - node: flat_file_list
+      - node: flat_file_delete
+    interface:
+      protocol: module
+      note: Split into flat-file (json) backend's 4 leaves below.
+    tests: []
+    notes: 'Each table is its own JSON file under storage_service/flat/<table>.json, storing a JSON list of records. PROPOSED (not confirmed): whole-file read-modify-write per operation -- fine for this app''s scale, would need real file locking if concurrent writers become a concern later.'
+  - id: flat_file_save
+    title: "Flat-file (JSON) backend — save"
+    status: contract_defined
+    parent: flat_file_backend
+    interface:
+      protocol: function
+      params:
+        - name: table
+          type:
+            type: string
+        - name: record
+          type:
+            type: map
+            key:
+              type: string
+            value:
+              type: string
+            notes: untyped in original -- review
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: string
+        notes: untyped in original -- review
+      name: save
+    stub_behavior: Implements save against the flat-file storage mechanism.
+    tests:
+      - id: flat_file-save-01
+        type: contract
+        description: saving a new record returns it with a generated id
+        given:
+          table: users
+          record:
+            name: Alice
+        expect:
+          id_present: true
+    notes: ''
+  - id: flat_file_get
+    title: "Flat-file (JSON) backend — get"
+    status: contract_defined
+    parent: flat_file_backend
+    interface:
+      protocol: function
+      params:
+        - name: table
+          type:
+            type: string
+        - name: record_id
+          type:
+            type: string
+      returns:
+        type: optional
+        of:
+          type: map
+          key:
+            type: string
+          value:
+            type: string
+          notes: untyped in original -- review
+      name: get
+    stub_behavior: Implements get against the flat-file storage mechanism.
+    tests:
+      - id: flat_file-get-01
+        type: contract
+        description: unknown id returns None
+        given:
+          table: users
+          record_id: nonexistent
+        expect:
+          found: false
+    notes: ''
+  - id: flat_file_list
+    title: "Flat-file (JSON) backend — list"
+    status: contract_defined
+    parent: flat_file_backend
+    interface:
+      protocol: function
+      params:
+        - name: table
+          type:
+            type: string
+        - name: filter
+          type:
+            type: map
+            key:
+              type: string
+            value:
+              type: string
+            notes: untyped in original -- review
+      returns:
+        type: list
+        items:
+          type: map
+          key:
+            type: string
+          value:
+            type: string
+          notes: untyped in original -- review
+      name: list
+    stub_behavior: Implements list against the flat-file storage mechanism.
+    tests:
+      - id: flat_file-list-01
+        type: contract
+        description: empty table returns an empty list
+        given:
+          table: users
+          filter: {}
+        expect:
+          records: []
+    notes: ''
+  - id: flat_file_delete
+    title: "Flat-file (JSON) backend — delete"
+    status: contract_defined
+    parent: flat_file_backend
+    interface:
+      protocol: function
+      params:
+        - name: table
+          type:
+            type: string
+        - name: record_id
+          type:
+            type: string
+      returns:
+        type: none
+      name: delete
+    stub_behavior: Implements delete against the flat-file storage mechanism.
+    tests:
+      - id: flat_file-delete-01
+        type: contract
+        description: deleting a nonexistent record does not raise
+        given:
+          table: users
+          record_id: nonexistent
+        expect:
+          raised: false
+    notes: ''
+  - id: sqlite_backend
+    title: SQLite backend
+    status: stub
+    parent: storage_service
+    boundary: module
+    dependencies:
+      - node: sqlite_save
+      - node: sqlite_get
+      - node: sqlite_list
+      - node: sqlite_delete
+    interface:
+      protocol: module
+      note: Split into sqlite backend's 4 leaves below.
+    tests: []
+    notes: 'Current RDBMS backend -- one real SQL table per `table` name. PROPOSED: use parameterized queries and avoid SQLite-specific syntax/functions so a future Postgres backend (explicitly requested as a future direction) can be added without changing this leaf''s own contract, only its implementation.'
+  - id: sqlite_save
+    title: "SQLite backend — save"
+    status: contract_defined
+    parent: sqlite_backend
+    interface:
+      protocol: function
+      params:
+        - name: table
+          type:
+            type: string
+        - name: record
+          type:
+            type: map
+            key:
+              type: string
+            value:
+              type: string
+            notes: untyped in original -- review
+      returns:
+        type: map
+        key:
+          type: string
+        value:
+          type: string
+        notes: untyped in original -- review
+      name: save
+    stub_behavior: Implements save against the sqlite storage mechanism.
+    tests:
+      - id: sqlite-save-01
+        type: contract
+        description: saving a new record returns it with a generated id
+        given:
+          table: users
+          record:
+            name: Alice
+        expect:
+          id_present: true
+    notes: ''
+  - id: sqlite_get
+    title: "SQLite backend — get"
+    status: contract_defined
+    parent: sqlite_backend
+    interface:
+      protocol: function
+      params:
+        - name: table
+          type:
+            type: string
+        - name: record_id
+          type:
+            type: string
+      returns:
+        type: optional
+        of:
+          type: map
+          key:
+            type: string
+          value:
+            type: string
+          notes: untyped in original -- review
+      name: get
+    stub_behavior: Implements get against the sqlite storage mechanism.
+    tests:
+      - id: sqlite-get-01
+        type: contract
+        description: unknown id returns None
+        given:
+          table: users
+          record_id: nonexistent
+        expect:
+          found: false
+    notes: ''
+  - id: sqlite_list
+    title: "SQLite backend — list"
+    status: contract_defined
+    parent: sqlite_backend
+    interface:
+      protocol: function
+      params:
+        - name: table
+          type:
+            type: string
+        - name: filter
+          type:
+            type: map
+            key:
+              type: string
+            value:
+              type: string
+            notes: untyped in original -- review
+      returns:
+        type: list
+        items:
+          type: map
+          key:
+            type: string
+          value:
+            type: string
+          notes: untyped in original -- review
+      name: list
+    stub_behavior: Implements list against the sqlite storage mechanism.
+    tests:
+      - id: sqlite-list-01
+        type: contract
+        description: empty table returns an empty list
+        given:
+          table: users
+          filter: {}
+        expect:
+          records: []
+    notes: ''
+  - id: sqlite_delete
+    title: "SQLite backend — delete"
+    status: contract_defined
+    parent: sqlite_backend
+    interface:
+      protocol: function
+      params:
+        - name: table
+          type:
+            type: string
+        - name: record_id
+          type:
+            type: string
+      returns:
+        type: none
+      name: delete
+    stub_behavior: Implements delete against the sqlite storage mechanism.
+    tests:
+      - id: sqlite-delete-01
+        type: contract
+        description: deleting a nonexistent record does not raise
+        given:
+          table: users
+          record_id: nonexistent
+        expect:
+          raised: false
+    notes: ''
+  - id: auth_result
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: auth_service
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: ok
+          type:
+            type: boolean
+        - name: token
+          type:
+            type: optional
+            of:
+              type: string
+        - name: reason
+          type:
+            type: optional
+            of:
+              type: string
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Promoted from an inline interface.types declaration during the Revision 3 migration.
+  - id: group_record
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: group_service
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: id
+          type:
+            type: string
+        - name: name
+          type:
+            type: string
+        - name: created_by_user_id
+          type:
+            type: string
+        - name: invite_code
+          type:
+            type: string
+        - name: members
+          type:
+            type: list
+            items:
+              type: string
+        - name: currency
+          type:
+            type: string
+        - name: last_updated
+          type:
+            type: string
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Promoted from an inline interface.types declaration during the Revision 3 migration.
+  - id: expense_record
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: expense_service
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: id
+          type:
+            type: string
+        - name: group_id
+          type:
+            type: string
+        - name: payer_id
+          type:
+            type: string
+        - name: amount
+          type:
+            type: decimal
+        - name: shares
+          type:
+            type: map
+            key:
+              type: string
+            value:
+              type: decimal
+        - name: description
+          type:
+            type: string
+        - name: date
+          type:
+            type: string
+        - name: status
+          type:
+            type: string
+            notes: "ORIGINAL (unconverted): 'pending'"
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Promoted from an inline interface.types declaration during the Revision 3 migration.
+  - id: settlement_instruction
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: kharcha_api
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: from_user
+          type:
+            type: string
+        - name: to_user
+          type:
+            type: string
+        - name: amount
+          type:
+            type: decimal
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Promoted from an inline interface.types declaration during the Revision 3 migration.
+  - id: settlement_round
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: payment_service
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: id
+          type:
+            type: string
+        - name: group_id
+          type:
+            type: string
+        - name: generated_at
+          type:
+            type: string
+        - name: covered_expense_ids
+          type:
+            type: list
+            items:
+              type: string
+        - name: status
+          type:
+            type: string
+            notes: "was a literal union in the original: 'pending' | 'completed'"
+        - name: records
+          type:
+            type: list
+            items:
+              type: settlement_record
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Promoted from an inline interface.types declaration during the Revision 3 migration.
+  - id: settlement_record
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: payment_service
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: id
+          type:
+            type: string
+        - name: round_id
+          type:
+            type: string
+        - name: from_user
+          type:
+            type: string
+        - name: to_user
+          type:
+            type: string
+        - name: amount
+          type:
+            type: decimal
+        - name: status
+          type:
+            type: string
+            notes: "was a literal union in the original: 'pending' | 'paid'"
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Promoted from an inline interface.types declaration during the Revision 3 migration.
+default_language: python

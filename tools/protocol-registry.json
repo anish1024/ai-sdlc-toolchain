@@ -1,0 +1,59 @@
+{
+  "rest": {
+    "label": "REST API (backbone)",
+    "color": "#b09fe3",
+    "allowedChildren": ["python-module", "python-function"],
+    "fields": [],
+    "leafCapable": false,
+    "language": "python"
+  },
+  "python-module": {
+    "label": "Python module (service/package)",
+    "color": "#90d1c9",
+    "allowedChildren": ["python-function", "python-module", "data-model", "contract", "class"],
+    "fields": ["exports"],
+    "leafCapable": false,
+    "language": "python"
+  },
+  "python-function": {
+    "label": "Python function (leaf)",
+    "color": "#eba0aa",
+    "allowedChildren": [],
+    "fields": ["signature", "types", "tests", "stub_behavior"],
+    "leafCapable": true,
+    "language": "python"
+  },
+  "browser-js": {
+    "label": "Frontend/JS surface",
+    "color": "#e0c170",
+    "allowedChildren": [],
+    "fields": ["exports"],
+    "leafCapable": true,
+    "connectsVia": "dependencies",
+    "language": "javascript"
+  },
+  "data-model": {
+    "label": "Data model (DTO / DB schema / enum / constant)",
+    "color": "#8eb6e8",
+    "allowedChildren": [],
+    "fields": ["model_kind", "model_fields"],
+    "leafCapable": true,
+    "language": null
+  },
+  "contract": {
+    "label": "Contract (data-transfer interface)",
+    "color": "#c9a6f7",
+    "allowedChildren": [],
+    "fields": ["methods"],
+    "leafCapable": false,
+    "language": null
+  },
+  "class": {
+    "label": "Class (implements a contract)",
+    "color": "#7fd9b9",
+    "allowedChildren": ["python-function"],
+    "fields": [],
+    "leafCapable": false,
+    "language": null
+  }
+}

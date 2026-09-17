@@ -1,0 +1,1059 @@
+project: kharcha-tracker
+backbone: kharcha_api
+default_boundary: module
+nodes:
+  - id: kharcha_api
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: null
+    interface:
+      protocol: entrypoint
+    contract_version: 0.0.0
+    dependencies:
+      - node: expense_service
+      - node: group_service
+      - node: settlement_engine
+      - node: storage_service
+      - node: models
+      - node: auth_service
+      - node: constants
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: expense_service
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: kharcha_api
+    interface:
+      protocol: module
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: group_service
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: kharcha_api
+    interface:
+      protocol: module
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: settlement_engine
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: kharcha_api
+    interface:
+      protocol: module
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: storage_service
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: kharcha_api
+    interface:
+      protocol: module
+      exports: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: schema
+      - node: storage_interface
+      - node: flat_file
+      - node: sql_lite
+      - node: postgres
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: models
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: kharcha_api
+    interface:
+      protocol: module
+      exports: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: constants
+      - node: base
+      - node: expense
+      - node: group
+      - node: payout
+      - node: user
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: base
+    title: base data model
+    status: unsplit
+    boundary: null
+    parent: models
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields: []
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to: []
+  - id: user
+    title: user model
+    status: unsplit
+    boundary: null
+    parent: models
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: id
+          type:
+            type: uuid
+        - name: name
+          type:
+            type: string
+        - name: password
+          type:
+            type: string
+        - name: email
+          type:
+            type: string
+        - name: avatar_url
+          type:
+            type: string
+    contract_version: 0.0.0
+    dependencies:
+      - node: base
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      'user' model captures all valid/active user logins in the system. The
+      'user' database table will also contain all in-active users (soft-deleted)
+    maps_to:
+      - user_record
+  - id: group
+    title: user-group model
+    status: unsplit
+    boundary: null
+    parent: models
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: id
+          type:
+            type: uuid
+        - name: name
+          type:
+            type: string
+        - name: created_by_user_id
+          type:
+            type: uuid
+        - name: invite_code
+          type:
+            type: string
+        - name: members
+          type:
+            type: list
+            items:
+              type: uuid
+        - name: status
+          type:
+            type: group_status
+        - name: currency
+          type:
+            type: string
+            notes: e.g. USD, EUR
+        - name: time_created
+          type:
+            type: datetime
+        - name: last_updated
+          type:
+            type: datetime
+    contract_version: 0.0.0
+    dependencies:
+      - node: base
+      - node: user
+      - node: group_status
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to:
+      - group_record
+  - id: expense
+    title: expense model
+    status: unsplit
+    boundary: null
+    parent: models
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: trans_id
+          type:
+            type: float
+        - name: date_time
+          type:
+            type: datetime
+        - name: expn_ctgry
+          type:
+            type: expense_category
+        - name: expn_desc
+          type:
+            type: string
+        - name: expn_amnt
+          type:
+            type: float
+        - name: expn_splt
+          type:
+            type: list
+            items:
+              type: expense_share
+        - name: paid_by
+          type:
+            type: list
+            items:
+              type: expense_payment
+        - name: expn_bill_screenshot
+          type:
+            type: string
+            notes: must be a valid URL
+        - name: expn_payment_screenshot
+          type:
+            type: string
+            notes: must be a valid URL
+        - name: status
+          type:
+            type: expense_status
+    contract_version: 0.0.0
+    dependencies:
+      - node: base
+      - node: group
+      - node: expense_status
+      - node: expense_category
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to:
+      - expense_record
+  - id: payout
+    title: payout instructions model
+    status: unsplit
+    boundary: null
+    parent: models
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: base
+      - node: expense
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to: []
+  - id: schema
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: storage_service
+    interface:
+      protocol: module
+      exports: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: base_record
+      - node: expense_record
+      - node: group_record
+      - node: audit_log
+      - node: user_record
+      - node: expense_share
+      - node: expense_payment
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: storage_interface
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: storage_service
+    interface:
+      protocol: contract
+      methods:
+        - name: save_record
+          params:
+            - name: record
+              type:
+                type: base_record
+          returns:
+            type: base_record
+        - name: get_record
+          params:
+            - name: id
+              type:
+                type: uuid
+          returns:
+            type: base_record
+        - name: list_records
+          params:
+            - name: filter
+              type:
+                type: map
+                key:
+                  type: string
+                value:
+                  type: string
+                notes: untyped in original -- review
+          returns:
+            type: list
+            items:
+              type: base_record
+        - name: delete_record
+          params:
+            - name: id
+              type:
+                type: uuid
+          returns:
+            type: boolean
+    contract_version: 0.0.0
+    dependencies:
+      - node: schema
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Storage backend contract. Every concrete backend (flat_file, sql_lite,
+      postgres) must implement all four methods with identical signatures so
+      callers never branch on backend type. Method signatures above are proposed
+      pending confirmation against the real base_record shape.
+  - id: flat_file
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: storage_service
+    interface:
+      protocol: class
+      implements:
+        - node: storage_interface
+      fields: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: flat_file_delete
+      - node: flat_file_get
+      - node: flat_file_list
+      - node: flat_file_save
+      - node: schema
+    stub_behavior: ''
+    tests: []
+    notes: File-backed implementation of the storage contract, for local/dev use.
+    implements:
+      - node: storage_interface
+  - id: sql_lite
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: storage_service
+    interface:
+      protocol: class
+      implements:
+        - node: storage_interface
+      fields: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: sqlite_delete
+      - node: sqlite_get
+      - node: sqlite_list
+      - node: sqlite_save
+      - node: schema
+    stub_behavior: ''
+    tests: []
+    notes: SQLite-backed implementation of the storage contract.
+    implements:
+      - node: storage_interface
+  - id: postgres
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: storage_service
+    interface:
+      protocol: class
+      implements:
+        - node: storage_interface
+      fields: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: schema
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Postgres-backed implementation of the storage contract. No leaf functions
+      defined yet — unimplemented.
+    implements:
+      - node: storage_interface
+  - id: flat_file_save
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: flat_file
+    interface:
+      protocol: function
+      params:
+        - name: record
+          type:
+            type: base_record
+      returns:
+        type: base_record
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: 'PROPOSED signature -- mirrors storage_interface''s contract methods for this concrete backend. Inferred from the contract, not from an existing spec on this node (title/notes were empty). Review before treating as final.'
+  - id: flat_file_get
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: flat_file
+    interface:
+      protocol: function
+      params:
+        - name: id
+          type:
+            type: uuid
+      returns:
+        type: base_record
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: 'PROPOSED signature -- mirrors storage_interface''s contract methods for this concrete backend. Inferred from the contract, not from an existing spec on this node (title/notes were empty). Review before treating as final.'
+  - id: flat_file_list
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: flat_file
+    interface:
+      protocol: function
+      params:
+        - name: filter
+          type:
+            type: map
+            key:
+              type: string
+            value:
+              type: string
+            notes: untyped in original -- review
+      returns:
+        type: list
+        items:
+          type: base_record
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: 'PROPOSED signature -- mirrors storage_interface''s contract methods for this concrete backend. Inferred from the contract, not from an existing spec on this node (title/notes were empty). Review before treating as final.'
+  - id: flat_file_delete
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: flat_file
+    interface:
+      protocol: function
+      params:
+        - name: id
+          type:
+            type: uuid
+      returns:
+        type: boolean
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: 'PROPOSED signature -- mirrors storage_interface''s contract methods for this concrete backend. Inferred from the contract, not from an existing spec on this node (title/notes were empty). Review before treating as final.'
+  - id: sqlite_save
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: sql_lite
+    interface:
+      protocol: function
+      params:
+        - name: record
+          type:
+            type: base_record
+      returns:
+        type: base_record
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: 'PROPOSED signature -- mirrors storage_interface''s contract methods for this concrete backend. Inferred from the contract, not from an existing spec on this node (title/notes were empty). Review before treating as final.'
+  - id: sqlite_get
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: sql_lite
+    interface:
+      protocol: function
+      params:
+        - name: id
+          type:
+            type: uuid
+      returns:
+        type: base_record
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: 'PROPOSED signature -- mirrors storage_interface''s contract methods for this concrete backend. Inferred from the contract, not from an existing spec on this node (title/notes were empty). Review before treating as final.'
+  - id: sqlite_list
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: sql_lite
+    interface:
+      protocol: function
+      params:
+        - name: filter
+          type:
+            type: map
+            key:
+              type: string
+            value:
+              type: string
+            notes: untyped in original -- review
+      returns:
+        type: list
+        items:
+          type: base_record
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: 'PROPOSED signature -- mirrors storage_interface''s contract methods for this concrete backend. Inferred from the contract, not from an existing spec on this node (title/notes were empty). Review before treating as final.'
+  - id: sqlite_delete
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: sql_lite
+    interface:
+      protocol: function
+      params:
+        - name: id
+          type:
+            type: uuid
+      returns:
+        type: boolean
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: 'PROPOSED signature -- mirrors storage_interface''s contract methods for this concrete backend. Inferred from the contract, not from an existing spec on this node (title/notes were empty). Review before treating as final.'
+  - id: base_record
+    title: common table columns
+    status: unsplit
+    boundary: null
+    parent: schema
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: is_deleted
+          type:
+            type: boolean
+        - name: created_by
+          type:
+            type: uuid
+        - name: created_at
+          type:
+            type: datetime
+        - name: modified_by
+          type:
+            type: uuid
+        - name: modified_at
+          type:
+            type: datetime
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      These columns will be present in all columns. The 'is_deleted' is for soft
+      deletion and will be usefull for data archiving. The 'created' and
+      'modofied' are for basic auditing. We can have an audit_log table for
+      recording every time a table row is modified. 
+    maps_to: []
+  - id: user_record
+    title: user table row
+    status: unsplit
+    boundary: null
+    parent: schema
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: id
+          type:
+            type: uuid
+        - name: name
+          type:
+            type: string
+        - name: password
+          type:
+            type: string
+        - name: email
+          type:
+            type: string
+        - name: avatar_url
+          type:
+            type: string
+        - name: is_active
+          type:
+            type: boolean
+        - name: created_by
+          type:
+            type: uuid
+        - name: created_at
+          type:
+            type: datetime
+        - name: modified_by
+          type:
+            type: uuid
+        - name: modified_at
+          type:
+            type: datetime
+    contract_version: 0.0.0
+    dependencies:
+      - node: base_record
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to: []
+  - id: group_record
+    title: group table row
+    status: unsplit
+    boundary: null
+    parent: schema
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: base_record
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to: []
+  - id: expense_record
+    title: expense table row
+    status: unsplit
+    boundary: null
+    parent: schema
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: base_record
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to: []
+  - id: auth_service
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: kharcha_api
+    interface:
+      protocol: module
+      exports: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: signup
+      - node: login
+      - node: request_password_reset
+      - node: confirm_password_reset
+      - node: get_current_user
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: signup
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: auth_service
+    interface:
+      protocol: function
+      http_method: POST
+      route: /api/v1/auth/signup
+      params:
+        - name: email
+          type:
+            type: string
+        - name: password
+          type:
+            type: string
+        - name: name
+          type:
+            type: string
+      returns:
+        type: user
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: 'PROPOSED signature -- inferred only from the node id, since title/notes/stub_behavior were all empty on this node. Review before treating as final, especially the return type.'
+  - id: login
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: auth_service
+    interface:
+      protocol: function
+      http_method: POST
+      route: /api/v1/auth/login
+      params:
+        - name: email
+          type:
+            type: string
+        - name: password
+          type:
+            type: string
+      returns:
+        type: string
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: 'PROPOSED signature -- inferred only from the node id; returns a bare token string for now -- consider a LoginResult DTO with a token field instead if generate_pytest.py''s ''token_present'' test convention should apply here, since that check does getattr(result, ''token'', None) which a bare str can never satisfy, since title/notes/stub_behavior were all empty on this node. Review before treating as final, especially the return type.'
+  - id: request_password_reset
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: auth_service
+    interface:
+      protocol: function
+      params:
+        - name: email
+          type:
+            type: string
+      returns:
+        type: boolean
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: 'PROPOSED signature -- inferred only from the node id, since title/notes/stub_behavior were all empty on this node. Review before treating as final, especially the return type.'
+  - id: confirm_password_reset
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: auth_service
+    interface:
+      protocol: function
+      params:
+        - name: token
+          type:
+            type: string
+        - name: new_password
+          type:
+            type: string
+      returns:
+        type: boolean
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: 'PROPOSED signature -- inferred only from the node id, since title/notes/stub_behavior were all empty on this node. Review before treating as final, especially the return type.'
+  - id: get_current_user
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: auth_service
+    interface:
+      protocol: function
+      types: {}
+      params:
+        - name: token
+          type:
+            type: string
+      returns:
+        type: user
+    contract_version: 0.0.0
+    dependencies:
+      - node: user
+    stub_behavior: ''
+    tests: []
+    notes: 'PROPOSED signature -- inferred only from the node id and its existing dependency on ''user'', since title/notes/stub_behavior were all empty on this node. Review before treating as final, especially the return type.'
+  - id: constants
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: kharcha_api
+    interface:
+      protocol: module
+      exports: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: expense_category
+      - node: expense_status
+      - node: group_status
+      - node: payout_status
+      - node: system_config
+    stub_behavior: ''
+    tests: []
+    notes: ''
+  - id: expense_category
+    title: expense category enum
+    status: unsplit
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: enum
+      enum_type: string
+      enum_values:
+        - name: GROCERY
+          value: GROCERY
+          notes: Fruits, vegetables, toiletries, kitchen items, home decor.
+        - name: UTILITY
+          value: UTILITY
+          notes: >-
+            Electricity bills, phone bill, fuel, water, and any metered
+            connections.
+        - name: TRAVEL
+          value: TRAVEL
+          notes: Cab, rail ticket, bus, air ticket.
+        - name: ENTERTAINMENT
+          value: ENTERTAINMENT
+          notes: Movies, subscriptions, fun activities.
+        - name: FOOD_N_DINING
+          value: FOOD_N_DINING
+          notes: Eating out, take-away.
+        - name: OP_EXP
+          value: OP_EXP
+          notes: >-
+            Operating expenses: society maintenance, allowances, maid salary,
+            pest control, replacing light bulbs, servicing HVAC/AC units, minor
+            electrical work. Balcony gardening and minor home decor (bedsheets,
+            cushions, curtains) belong here since it maintains what already
+            exists.
+        - name: CAP_EXP
+          value: CAP_EXP
+          notes: >-
+            Long-term tangible items with useful life > 1 year: furniture &
+            fixtures (desks, chairs, sofas, beds, permanent lighting),
+            structural remodeling (false ceilings, built-in cabinetry, permanent
+            flooring, safety doors). Minor decor/design fees that do not add
+            permanent structural value belong to OP_EXP instead (cushions, rugs,
+            paintings, temporary curtains, standalone cosmetic consultation
+            fees) — this boundary is the actual spec, apply it exactly when
+            categorizing.
+        - name: ACCOMMODATION
+          value: ACCOMMODATION
+          notes: Rent, hotel, Airbnb, etc.
+        - name: SETTLEMENT
+          value: SETTLEMENT
+          notes: >-
+            Used to record user-to-user settlement payments, not a real purchase
+            category.
+        - name: CUSTOM
+          value: CUSTOM
+          notes: Placeholder for user-defined expense categories.
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Category applied to an expense for reporting/budgeting. See per-value
+      notes for the exact OP_EXP vs CAP_EXP boundary, which is the one genuinely
+      ambiguous distinction in this set.
+    maps_to: []
+  - id: expense_status
+    title: expense state enum
+    status: unsplit
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: enum
+      enum_type: string
+      enum_values:
+        - name: OPEN
+          value: Open
+        - name: LOCKED
+          value: Locked
+        - name: SETTLED
+          value: Settled
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Lifecycle status of an expense within its group. OPEN = still being added
+      to, LOCKED = no further edits accepted, SETTLED = balances paid out.
+    maps_to: []
+  - id: payout_status
+    title: payout state enum
+    status: unsplit
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: enum
+      enum_type: string
+      enum_values:
+        - name: PENDING
+          value: PENDING
+        - name: SETTLED
+          value: SETTLED
+        - name: FAILED
+          value: FAILED
+        - name: CANCELLED
+          value: CANCELLED
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Lifecycle status of a single payout instruction generated by the
+      settlement engine.
+    maps_to: []
+  - id: group_status
+    title: group state enum
+    status: unsplit
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: enum
+      enum_type: string
+      enum_values:
+        - name: OPEN
+          value: OPEN
+        - name: LOCKED
+          value: LOCKED
+        - name: SETTLED
+          value: SETTLED
+        - name: CANCELLED
+          value: CANCELLED
+        - name: PARTIAL_SETTLEMENT
+          value: PARTIAL_SETTLEMENT
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: >-
+      Lifecycle status of a group. PARTIAL_SETTLEMENT covers the case where some
+      but not all members have settled their balances.
+    maps_to: []
+  - id: system_config
+    title: system config values
+    status: unsplit
+    boundary: null
+    parent: constants
+    interface:
+      protocol: data-model
+      model_kind: constant
+      constants:
+        - name: DECIMAL_PRECISION
+          type: integer
+          value: 2
+          scope: module
+          notes: Standard finance rounding — 2 decimal places.
+        - name: FLOAT_EPSILON
+          type: float
+          value: 0.01
+          scope: module
+          notes: Tolerance used when checking Net Debt Matrix Sum == 0.
+        - name: MAX_TRANSACTION_ID
+          type: integer
+          value: 4294967295
+          scope: module
+          notes: uint32 range.
+        - name: MAX_GROUP_SIZE
+          type: integer
+          value: 100
+          scope: module
+          notes: Soft limit on group size.
+        - name: MAX_PAYOUTS_PER_BATCH
+          type: integer
+          value: 100
+          scope: module
+          notes: Processing batch size.
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Shared expense-module configuration constants.
+    maps_to: []
+  - id: audit_log
+    title: ''
+    status: unsplit
+    boundary: null
+    parent: schema
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields: []
+    contract_version: 0.0.0
+    dependencies:
+      - node: base_record
+    stub_behavior: ''
+    tests: []
+    notes: ''
+    maps_to: []
+  - id: expense_share
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: schema
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: user_id
+          type:
+            type: uuid
+        - name: percentage
+          type:
+            type: float
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Promoted from expense.expn_splt during the Revision 3 migration -- a per-participant share of an expense split.
+  - id: expense_payment
+    title: ''
+    status: contract_defined
+    boundary: null
+    parent: schema
+    interface:
+      protocol: data-model
+      model_kind: dto
+      model_fields:
+        - name: user_id
+          type:
+            type: uuid
+        - name: amt
+          type:
+            type: float
+    contract_version: 0.0.0
+    dependencies: []
+    stub_behavior: ''
+    tests: []
+    notes: Promoted from expense.paid_by during the Revision 3 migration -- a per-participant payment toward an expense.
+default_language: python
