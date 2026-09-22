@@ -1,0 +1,1191 @@
+project: kharcha-tracker
+backbone: kharcha_api
+default_boundary: module
+default_language: python
+nodes:
+- id: kharcha_api
+  title: ''
+  status: contract_defined
+  boundary: null
+  parent: null
+  interface:
+    protocol: entrypoint
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  maps_to: []
+- id: kharcha_gateway
+  title: ''
+  status: contract_defined
+  boundary: null
+  parent: kharcha_api
+  interface:
+    protocol: gateway
+    transport: http
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  prompt: ''
+  maps_to: []
+- id: kharcha_service
+  title: ''
+  status: contract_defined
+  boundary: null
+  parent: kharcha_gateway
+  interface:
+    protocol: service
+    language: python
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  prompt: ''
+  maps_to: []
+- id: expense_service
+  title: ''
+  status: unsplit
+  boundary: null
+  parent: kharcha_service
+  interface:
+    protocol: module
+    exports: []
+  contract_version: 0.0.0
+  dependencies:
+  - node: models
+  - node: storage_service
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  maps_to: []
+- id: group_service
+  title: ''
+  status: unsplit
+  boundary: null
+  parent: kharcha_service
+  interface:
+    protocol: module
+    exports: []
+  contract_version: 0.0.0
+  dependencies:
+  - node: models
+  - node: storage_service
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  maps_to: []
+- id: settlement_engine
+  title: ''
+  status: unsplit
+  boundary: null
+  parent: kharcha_service
+  interface:
+    protocol: module
+    exports: []
+  contract_version: 0.0.0
+  dependencies:
+  - node: storage_interface
+  - node: models
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  maps_to: []
+- id: storage_service
+  title: ''
+  status: unsplit
+  boundary: null
+  parent: kharcha_service
+  interface:
+    protocol: module
+    exports: []
+    layout: folder
+  contract_version: 0.0.0
+  dependencies:
+  - node: models
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  maps_to: []
+- id: models
+  title: ''
+  status: contract_defined
+  boundary: null
+  parent: kharcha_service
+  interface:
+    protocol: module
+    exports: []
+    layout: folder
+  contract_version: 0.0.0
+  dependencies:
+  - node: constants
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  maps_to: []
+- id: base
+  title: base data model
+  status: stub
+  boundary: null
+  parent: models
+  interface:
+    protocol: data-model
+    model_kind: dto
+    model_fields:
+    - name: auth_user_id
+      type:
+        type: uuid
+    - name: auth_token
+      type:
+        type: string
+    - name: auth_token_expiry
+      type:
+        type: datetime
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: Base DTO model that captures common fields like current login userid, login token, token expiry
+    date-time.
+  maps_to: []
+  prompt_template: ''
+  prompt: ''
+- id: user
+  title: user model
+  status: stub
+  boundary: null
+  parent: models
+  interface:
+    protocol: data-model
+    model_kind: dto
+    model_fields:
+    - name: id
+      type:
+        type: uuid
+    - name: name
+      type:
+        type: string
+    - name: password
+      type:
+        type: string
+    - name: email
+      type:
+        type: string
+    - name: avatar_url
+      type:
+        type: string
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: '''user'' model captures all valid/active user logins in the system. The ''user'' database table
+    will also contain all in-active users (soft-deleted)'
+  maps_to:
+  - user_record
+  prompt_template: ''
+  prompt: ''
+- id: group
+  title: user-group model
+  status: stub
+  boundary: null
+  parent: models
+  interface:
+    protocol: data-model
+    model_kind: dto
+    model_fields:
+    - name: id
+      type:
+        type: uuid
+    - name: name
+      type:
+        type: string
+    - name: created_by_user_id
+      type:
+        type: uuid
+    - name: invite_code
+      type:
+        type: string
+    - name: members
+      type:
+        type: list
+        items:
+          type: uuid
+    - name: status
+      type:
+        type: group_status
+    - name: currency
+      type:
+        type: string
+        notes: 'ORIGINAL (unconverted): string (e.g., USD, EUR)'
+    - name: time_created
+      type:
+        type: datetime
+    - name: last_updated
+      type:
+        type: datetime
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  maps_to:
+  - group_record
+  prompt_template: ''
+  prompt: ''
+- id: expense
+  title: expense model
+  status: stub
+  boundary: null
+  parent: models
+  interface:
+    protocol: data-model
+    model_kind: dto
+    model_fields:
+    - name: trans_id
+      type:
+        type: float
+    - name: date_time
+      type:
+        type: datetime
+    - name: expn_ctgry
+      type:
+        type: expense_category
+    - name: expn_desc
+      type:
+        type: string
+    - name: expn_amnt
+      type:
+        type: float
+    - name: expn_splt
+      type:
+        type: list
+        items:
+          type: expense_share
+    - name: paid_by
+      type:
+        type: list
+        items:
+          type: expense_payment
+    - name: expn_bill_screenshot
+      type:
+        type: string
+        notes: must be a valid URL
+    - name: expn_payment_screenshot
+      type:
+        type: string
+        notes: must be a valid URL
+    - name: status
+      type:
+        type: expense_status
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: DTO that captures all information required related to expense transaction.
+  maps_to:
+  - expense_record
+  prompt_template: ''
+  prompt: ''
+- id: payout
+  title: payout instructions model
+  status: stub
+  boundary: null
+  parent: models
+  interface:
+    protocol: data-model
+    model_kind: dto
+    model_fields:
+    - name: payor_id
+      type:
+        type: uuid
+    - name: payee_id
+      type:
+        type: uuid
+    - name: amt
+      type:
+        type: float
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: Capture the payment instructions for settling debt balances. Contains payor userid to payee userid
+    and what amount
+  maps_to: []
+  prompt_template: ''
+  prompt: ''
+- id: schema
+  title: ''
+  status: unsplit
+  boundary: null
+  parent: storage_service
+  interface:
+    protocol: module
+    exports: []
+    layout: folder
+  contract_version: 0.0.0
+  dependencies:
+  - node: expense_share
+  - node: expense_payment
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  maps_to: []
+- id: storage_interface
+  title: ''
+  status: stub
+  boundary: null
+  parent: storage_service
+  interface:
+    protocol: contract
+    methods:
+    - name: save_record
+      params:
+      - name: record
+        type:
+          type: base_record
+      - name: schema
+        type:
+          type: string
+      returns:
+        type: base_record
+        description: The saved record with potentially updated fields.
+    - name: get_record
+      params:
+      - name: record_id
+        type:
+          type: string
+      - name: schema
+        type:
+          type: string
+      returns:
+        type: optional
+        of:
+          type: base_record
+    - name: list_records
+      params:
+      - name: sort_by
+        type:
+          type: optional
+          of:
+            type: string
+      - name: ascending
+        type:
+          type: boolean
+      - name: limit
+        type:
+          type: integer
+      - name: offset
+        type:
+          type: integer
+      - name: schema
+        type:
+          type: string
+      returns:
+        type: list
+        items:
+          type: base_record
+    - name: delete_record
+      params:
+      - name: record
+        type:
+          type: base_record
+      - name: schema
+        type:
+          type: string
+      returns:
+        type: boolean
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  prompt: ''
+  maps_to: []
+- id: flat_file
+  title: ''
+  status: stub
+  boundary: null
+  parent: storage_service
+  interface:
+    protocol: class
+    fields: []
+  contract_version: 0.0.0
+  dependencies:
+  - node: storage_interface
+  - node: group_record
+  - node: user_record
+  - node: expense_record
+  - node: audit_log
+  stub_behavior: ''
+  tests: []
+  notes: "Database folder Path: kharcha-tracker/storage_service/flat_file_db/'. Create if this file does\
+    \ not exist yet. \n\nSchema table files to read/write to:\nuser_record - kharcha-tracker/storage_service/flat_file_db/user_records.json\n\
+    group_record - kharcha-tracker/storage_service/flat_file_db/group_records.json\nexpense_record - kharcha-tracker/storage_service/flat_file_db/expense_records.json\n\
+    audit_log - kharcha-tracker/storage_service/flat_file_db/audit_logs.json\n\nWorking: All data must\
+    \ be loaded as list<schema_record> in-memory for quick read/write. Every write should update in-memory\
+    \ list and immediately trigger file write to relevant schema table.\n\nThings to Consider:\n1. ID\
+    \ generation: UUIDs. Record ID Format: UUID string in get_record\n2. Schema Validation: Validate that\
+    \ schema parameter exists in registry before operations\n3. ExpenseRecord Handling: Deep-copy nested\
+    \ objects during deserialisation; use json.dump() with default=str to handle serialisation. This is\
+    \ regarding DTOs ‘List<expense_payments>’ and ‘List<expense_share’ which will be JSON encoded strings\
+    \ stored for schema ‘ExpenseRecord.paid_by’ and ‘ExpenseRecord.expn_splt’ \n4. Transaction ID Generation:\
+    \ Auto-incrementing Unsigned Int 32-bit (using MAX_TRANSACTION_ID from constants = 4294967295)\n5.\
+    \ Error Handling: Return success/failure with message format for all operations\n6. In-Memory Storage\
+    \ Strategy: Multi-tier approach\n\t- Master tables (user, group): Fully loaded & cached\n\t- Transaction\
+    \ tables (expense, audit_log): Lazy-loaded based on group_id; limit max transactions per group\n\t\
+    - Pagination: Load in pages of 1000 records from file\n7. Storage structure: Should records be stored\
+    \ as:\n\t- Flat JSON array: {“{id}: [{…}]}, where id is the record_id i.e. UUID\n8. Soft delete implementation:\
+    \ Set is_deleted: true \n9. Audit log structure: Following structure is approved\n{\n    \"id\": ...,\n\
+    \    \"action\": \"CREATE|UPDATE|DELETE\",\n    \"table/schema: \"...\",\n    \"user_id\": ...,\n\
+    \    \"created_at\": \"...\",\n    \"old_value\": {...},\n    \"new_value\": {...}\n}\n10. Referential\
+    \ integrity: Must implement CASCADE delete for child records when parent is deleted\n11. Search/filters:\
+    \ list_records() must support filters (by user_id, by group_id, by field values)\n12. Import strategy:\
+    \ Relative imports (from .schema.*)\n13. Deduplication rule: When same record.id exists in in-memory\
+    \ list, keep the newest (last) record\n14. Schema registry: Want a schema_registry.json for mapping\
+    \ schema names to default classes\n15. Constants: The schema files reference .constants - refer ‘./kharcha-tracker/constants/*.*’\
+    \ for all ENUMs\n16. Audit on GET: When calling get_record, Do Not create an audit log entry. Audit\
+    \ log entry must for delete-update-write operations only\n"
+  prompt_template: ''
+  prompt: ''
+  maps_to: []
+  implements:
+  - node: storage_interface
+- id: sql_lite
+  title: ''
+  status: unsplit
+  boundary: null
+  parent: storage_service
+  interface:
+    protocol: class
+    fields: []
+  contract_version: 0.0.0
+  dependencies:
+  - node: storage_interface
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  prompt: ''
+  implements:
+  - node: storage_interface
+  maps_to: []
+- id: postgres
+  title: ''
+  status: unsplit
+  boundary: null
+  parent: storage_service
+  interface:
+    protocol: class
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  implements:
+  - node: storage_interface
+  prompt_template: ''
+  maps_to: []
+- id: base_record
+  title: common table columns
+  status: stub
+  boundary: null
+  parent: schema
+  interface:
+    protocol: data-model
+    model_kind: dto
+    model_fields:
+    - name: is_deleted
+      type:
+        type: boolean
+    - name: created_by
+      type:
+        type: uuid
+    - name: created_at
+      type:
+        type: datetime
+    - name: modified_by
+      type:
+        type: uuid
+    - name: modified_at
+      type:
+        type: datetime
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: 'Captures all common columns present in any table schema
+
+
+    These columns will be present in all columns. The ''is_deleted'' is for soft deletion and will be
+    usefull for data archiving. The ''created'' and ''modofied'' are for basic auditing. We can have an
+    audit_log table for recording every time a table row is modified.'
+  maps_to: []
+  prompt_template: ''
+  prompt: ''
+- id: user_record
+  title: user table row
+  status: stub
+  boundary: null
+  parent: schema
+  interface:
+    protocol: data-model
+    model_kind: dto
+    model_fields:
+    - name: id
+      type:
+        type: uuid
+    - name: name
+      type:
+        type: string
+    - name: password
+      type:
+        type: string
+    - name: email
+      type:
+        type: string
+    - name: avatar_url
+      type:
+        type: string
+    - name: is_active
+      type:
+        type: boolean
+    - name: created_by
+      type:
+        type: uuid
+    - name: created_at
+      type:
+        type: datetime
+    - name: modified_by
+      type:
+        type: uuid
+    - name: modified_at
+      type:
+        type: datetime
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  maps_to: []
+  prompt_template: ''
+  prompt: ''
+- id: group_record
+  title: group table row
+  status: stub
+  boundary: null
+  parent: schema
+  interface:
+    protocol: data-model
+    model_kind: dto
+    model_fields:
+    - name: id
+      type:
+        type: optional
+        of:
+          type: uuid
+      required: false
+      notes: Primary key - auto-generated if null (read-only)
+    - name: name
+      type:
+        type: string
+      required: true
+      notes: 'Group name or identifier (length: 1-100)'
+    - name: invite_code
+      type:
+        type: optional
+        of:
+          type: string
+      required: false
+      notes: Unique invite code for the group
+    - name: members
+      type:
+        type: list
+        items:
+          type: uuid
+      required: false
+      notes: List of user IDs in the group. Soft-deleted groups have empty array.
+    - name: status
+      type:
+        type: string
+      required: true
+      notes: 'Lifecycle status of the group - enum value, case sensitive (allowed: OPEN, LOCKED, SETTLED,
+        CANCELLED, PARTIAL_SETTLEMENT)'
+    - name: currency
+      type:
+        type: string
+      required: true
+      notes: 'Currency code (e.g., INR, USD, EUR) (pattern: ^[A-Z]{3}$)'
+    - name: is_deleted
+      type:
+        type: boolean
+      required: false
+      notes: 'Soft delete flag (default: false; read-only)'
+    - name: created_by
+      type:
+        type: optional
+        of:
+          type: uuid
+      required: true
+      notes: User ID who created the group (soft-deleted groups don't have this)
+    - name: created_at
+      type:
+        type: datetime
+      required: true
+      notes: Timestamp when the record was created
+    - name: modified_by
+      type:
+        type: optional
+        of:
+          type: uuid
+      required: false
+      notes: User ID who last modified the group (soft-deleted groups don't have this)
+    - name: modified_at
+      type:
+        type: datetime
+      required: false
+      notes: Timestamp when the record was last modified
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: Derive the group schema fields from group model
+  tests: []
+  notes: 'Schema mapping for group table in storage layer
+
+
+    Table schema to store group records'
+  maps_to:
+  - group
+  prompt_template: ''
+  prompt: ''
+- id: expense_record
+  title: expense table row
+  status: stub
+  boundary: null
+  parent: schema
+  interface:
+    protocol: data-model
+    model_kind: dto
+    model_fields: []
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: Derive the group schema fields from expense model
+  tests: []
+  notes: ''
+  maps_to:
+  - expense
+  prompt_template: ''
+  prompt: ''
+- id: auth_service
+  title: ''
+  status: unsplit
+  boundary: null
+  parent: kharcha_service
+  interface:
+    protocol: module
+  contract_version: 0.0.0
+  dependencies:
+  - node: user
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  maps_to: []
+- id: signup
+  title: ''
+  status: unsplit
+  boundary: null
+  parent: auth_service
+  interface:
+    protocol: function
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  maps_to: []
+- id: login
+  title: ''
+  status: unsplit
+  boundary: null
+  parent: auth_service
+  interface:
+    protocol: function
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  maps_to: []
+- id: request_password_reset
+  title: ''
+  status: unsplit
+  boundary: null
+  parent: auth_service
+  interface:
+    protocol: function
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  maps_to: []
+- id: confirm_password_reset
+  title: ''
+  status: unsplit
+  boundary: null
+  parent: auth_service
+  interface:
+    protocol: function
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  maps_to: []
+- id: get_current_user
+  title: ''
+  status: unsplit
+  boundary: null
+  parent: auth_service
+  interface:
+    protocol: function
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  maps_to: []
+- id: constants
+  title: ''
+  status: unsplit
+  boundary: null
+  parent: kharcha_service
+  interface:
+    protocol: module
+    exports: []
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: ''
+  prompt_template: ''
+  maps_to: []
+- id: expense_category
+  title: expense category enum
+  status: unsplit
+  boundary: null
+  parent: constants
+  interface:
+    protocol: data-model
+    model_kind: enum
+    enum_type: string
+    enum_values:
+    - name: GROCERY
+      value: GROCERY
+      notes: Fruits, vegetables, toiletries, kitchen items, home decor.
+    - name: UTILITY
+      value: UTILITY
+      notes: Electricity bills, phone bill, fuel, water, and any metered connections.
+    - name: TRAVEL
+      value: TRAVEL
+      notes: Cab, rail ticket, bus, air ticket.
+    - name: ENTERTAINMENT
+      value: ENTERTAINMENT
+      notes: Movies, subscriptions, fun activities.
+    - name: FOOD_N_DINING
+      value: FOOD_N_DINING
+      notes: Eating out, take-away.
+    - name: OP_EXP
+      value: OP_EXP
+      notes: 'Operating expenses: society maintenance, allowances, maid salary, pest control, replacing
+        light bulbs, servicing HVAC/AC units, minor electrical work. Balcony gardening and minor home
+        decor (bedsheets, cushions, curtains) belong here since it maintains what already exists.'
+    - name: CAP_EXP
+      value: CAP_EXP
+      notes: 'Long-term tangible items with useful life > 1 year: furniture & fixtures (desks, chairs,
+        sofas, beds, permanent lighting), structural remodeling (false ceilings, built-in cabinetry, permanent
+        flooring, safety doors). Minor decor/design fees that do not add permanent structural value belong
+        to OP_EXP instead (cushions, rugs, paintings, temporary curtains, standalone cosmetic consultation
+        fees) — this boundary is the actual spec, apply it exactly when categorizing.'
+    - name: ACCOMMODATION
+      value: ACCOMMODATION
+      notes: Rent, hotel, Airbnb, etc.
+    - name: SETTLEMENT
+      value: SETTLEMENT
+      notes: Used to record user-to-user settlement payments, not a real purchase category.
+    - name: CUSTOM
+      value: CUSTOM
+      notes: Placeholder for user-defined expense categories.
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: "Category applied to an expense for reporting/budgeting. See per-value notes for the exact OP_EXP\
+    \ vs CAP_EXP boundary, which is the one genuinely ambiguous distinction in this set.\n\nENUM = [\"\
+    GROCERY\", \"UTILITY\", \"TRAVEL\", \"ENTERTAINMENT\", \"FOOD_N_DINING\", \"OP_EXP\", \"CAP_EXP\"\
+    , \"ACCOMMODATION\", \"SETTLEMENT\", \"CUSTOM\"]\n\n# Standard Expenses\n\n    GROCERY = \"Fruits,\
+    \ vegetables, toiletries, kitchen items, home decor, \"\n\n    UTILITY = \"electricity bills, phone\
+    \ bill, fuel, water and ay metered connections\"\n\n    TRAVEL = \"cab, rail tkt, bus, air tkt\"\n\
+    \n    ENTERTAINMENT = \"Movie, any subscriptions, fun activites\"\n\n    FOOD_N_DINING = \"Eating\
+    \ out, take-away\"\n\n    OP_EXP = \"Operating expenses like society Maintenance, allowances, maid\
+    \ salary, pest-control, replacing light bulbs, servicing HVAC/air conditioning units, and minor electrical\
+    \ work. Balcony gardening and Home decor like replacing bedsheets, cushions, curtains can be included\
+    \ here since it maintaining what is already present\"\n    \n    CAP_EXP = \"Long-term tangible items\
+    \ with a useful life of more than one year like Furniture & Fixtures like Desks, office chairs, sofas,\
+    \ dining tables, beds, and permanent lighting fixtures. Interior designing and structural changes\
+    \ made to a property you own or lease like False ceilings, built-in cabinetry, permanent flooring,\
+    \ safety doors and structural re-modeling. Minor home decor and design fees that do not add permanent\
+    \ structural value belong to OP_EXP like Cushions, rugs, paintings, temporary curtains, and standalone\
+    \ consultation fees for minor cosmetic refreshes\"\n\n    ACCOMMODATION = \"Rent, hotel, air-bnb,\
+    \ etc.\"\n    \n# Special Categories\n    SETTLEMENT = \"Settlement\"  # Used to record user-to-user\
+    \ payments\n    CUSTOM = \"Custom\"         # Placeholder for user-defined expenses"
+  maps_to: []
+  prompt_template: ''
+- id: expense_status
+  title: expense state enum
+  status: unsplit
+  boundary: null
+  parent: constants
+  interface:
+    protocol: data-model
+    model_kind: enum
+    enum_type: string
+    enum_values:
+    - name: OPEN
+      value: Open
+    - name: LOCKED
+      value: Locked
+    - name: SETTLED
+      value: Settled
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: 'Lifecycle status of an expense within its group. OPEN = still being added to, LOCKED = no further
+    edits accepted, SETTLED = balances paid out.
+
+
+    ENUM = ["Open", "Locked", "Settled"]'
+  maps_to: []
+  prompt_template: ''
+- id: payout_status
+  title: payout state enum
+  status: unsplit
+  boundary: null
+  parent: constants
+  interface:
+    protocol: data-model
+    model_kind: enum
+    enum_type: string
+    enum_values:
+    - name: PENDING
+      value: PENDING
+    - name: SETTLED
+      value: SETTLED
+    - name: FAILED
+      value: FAILED
+    - name: CANCELLED
+      value: CANCELLED
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: 'Lifecycle status of a single payout instruction generated by the settlement engine.
+
+
+    ENUM = ["PENDING", "SETTLED", "FAILED", "CANCELLED"]'
+  maps_to: []
+  prompt_template: ''
+- id: group_status
+  title: group state enum
+  status: unsplit
+  boundary: null
+  parent: constants
+  interface:
+    protocol: data-model
+    model_kind: enum
+    enum_type: string
+    enum_values:
+    - name: OPEN
+      value: OPEN
+    - name: LOCKED
+      value: LOCKED
+    - name: SETTLED
+      value: SETTLED
+    - name: CANCELLED
+      value: CANCELLED
+    - name: PARTIAL_SETTLEMENT
+      value: PARTIAL_SETTLEMENT
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: 'Lifecycle status of a group. PARTIAL_SETTLEMENT covers the case where some but not all members
+    have settled their balances.
+
+
+    ENUM = ["OPEN", "LOCKED", "SETTLED", "CANCELLED", "PARTIAL_SETTLEMENT"]'
+  maps_to: []
+  prompt_template: ''
+- id: system_config
+  title: system config values
+  status: unsplit
+  boundary: null
+  parent: constants
+  interface:
+    protocol: data-model
+    model_kind: constant
+    constants:
+    - name: DECIMAL_PRECISION
+      type: int
+      value: 2
+      scope: module
+      notes: Standard finance rounding — 2 decimal places.
+    - name: FLOAT_EPSILON
+      type: float
+      value: 0.01
+      scope: module
+      notes: Tolerance used when checking Net Debt Matrix Sum == 0.
+    - name: MAX_TRANSACTION_ID
+      type: int
+      value: 4294967295
+      scope: module
+      notes: uint32 range.
+    - name: MAX_GROUP_SIZE
+      type: int
+      value: 100
+      scope: module
+      notes: Soft limit on group size.
+    - name: MAX_PAYOUTS_PER_BATCH
+      type: int
+      value: 100
+      scope: module
+      notes: Processing batch size.
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: 'Shared expense-module configuration constants.
+
+
+    # Currency / Decimal Precision (Standard Finance: 2 decimal places)
+
+    DECIMAL_PRECISION = 2
+
+
+    # Floating Point Epsilon for Zero Sum Validation (Accounting Tolerance)
+
+    # Used when checking if Net Debt Matrix Sum == 0
+
+    FLOAT_EPSILON = 0.01
+
+
+    # Transaction Limits (if applicable to your DB type)
+
+    MAX_TRANSACTION_ID = 4294967295  # uint32 range
+
+    MAX_GROUP_SIZE = 100           # Soft limit on group size
+
+    MAX_PAYOUTS_PER_BATCH = 100     # Processing batch size'
+  maps_to: []
+  prompt_template: ''
+- id: audit_log
+  title: AuditLogDTO
+  status: stub
+  boundary: null
+  parent: schema
+  interface:
+    protocol: data-model
+    model_kind: dto
+    model_fields:
+    - name: id
+      type:
+        type: optional
+        of:
+          type: uuid
+      required: true
+    - name: event
+      type:
+        type: string
+      required: true
+      notes: '(allowed: CREATE, UPDATE, DELETE, LOCK, UNLOCK, SETTLE, CANCEL, RECOVER)'
+    - name: entity_type
+      type:
+        type: string
+      required: true
+      notes: '(allowed: group, expense, user, payout, audit_log)'
+    - name: entity_id
+      type:
+        type: optional
+        of:
+          type: uuid
+      required: false
+    - name: action
+      type:
+        type: optional
+        of:
+          type: string
+      required: false
+    - name: field_name
+      type:
+        type: optional
+        of:
+          type: string
+      required: false
+    - name: old_value
+      type:
+        type: optional
+        of:
+          type: string
+      required: false
+      notes: Serialized old value before the change
+    - name: new_value
+      type:
+        type: optional
+        of:
+          type: string
+      required: false
+      notes: Serialized new value after the change
+    - name: actor_user_id
+      type:
+        type: optional
+        of:
+          type: uuid
+      required: false
+    - name: actor_name
+      type:
+        type: optional
+        of:
+          type: string
+      required: false
+    - name: actor_ip
+      type:
+        type: optional
+        of:
+          type: string
+      required: false
+    - name: actor_user_agent
+      type:
+        type: optional
+        of:
+          type: string
+      required: false
+    - name: reason
+      type:
+        type: optional
+        of:
+          type: string
+      required: false
+    - name: error_code
+      type:
+        type: optional
+        of:
+          type: string
+      required: false
+    - name: is_deleted
+      type:
+        type: boolean
+      required: false
+      notes: '(default: false)'
+    - name: created_by
+      type:
+        type: optional
+        of:
+          type: uuid
+      required: true
+    - name: created_at
+      type:
+        type: optional
+        of:
+          type: datetime
+      required: false
+    - name: modified_by
+      type:
+        type: optional
+        of:
+          type: uuid
+      required: false
+    - name: modified_at
+      type:
+        type: optional
+        of:
+          type: datetime
+      required: true
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: "\"ID, actor_user_id, created_by, modified_by, entity_id use format: uuid per Python UUID serialization\
+    \ (JSON serializes UUIDs as strings)\",\n  \"created_at, modified_at, date_time use format: date-time\
+    \ per ISO 8601 datetime format\",\n  \"event, entity_type use string enum values matching the Python\
+    \ Enum .value property\",\n  \"All non-required fields use type: [type, null] to match Python Optional\
+    \ fields\",\n  \"old_value, new_value use union of primitive types and null to match Python Union[Type,\
+    \ None] serialization\""
+  maps_to: []
+  prompt_template: ''
+  prompt: ''
+- id: expense_share
+  title: ''
+  status: stub
+  boundary: null
+  parent: models
+  interface:
+    protocol: data-model
+    model_kind: dto
+    model_fields:
+    - name: user_id
+      type:
+        type: uuid
+    - name: percentage
+      type:
+        type: float
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: 'DTO to capture split percentage among user (ids) who participate in particular expense. So user
+    gets assigned percentage of total expense amount. Value of 100.00 means user paid for the entire expense.
+    Value of 30.00 means user paid only 30 percent of the total expense '
+  prompt_template: ''
+  prompt: ''
+  maps_to: []
+- id: expense_payment
+  title: ''
+  status: stub
+  boundary: null
+  parent: models
+  interface:
+    protocol: data-model
+    model_kind: dto
+    model_fields:
+    - name: user_id
+      type:
+        type: uuid
+    - name: amt
+      type:
+        type: float
+  contract_version: 0.0.0
+  dependencies: []
+  stub_behavior: ''
+  tests: []
+  notes: DTO used for capture paid amount to particular user (id)
+  prompt_template: ''
+  prompt: ''
+  maps_to: []

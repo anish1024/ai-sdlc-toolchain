@@ -72,12 +72,16 @@ function buildTree(normalized) {
 }
 
 /**
- * Every dependency that is NOT the source node's own child (per the
- * `parent` field) is a "cross edge" worth drawing separately from the
- * tree — for a split/parent node, dependencies always equal its own
- * children (an established schema rule), so those are redundant with
- * the tree edges already drawn; for a leaf, EVERY dependency is a
- * cross edge, since leaves have no children of their own.
+ * Every dependency is drawn as a "cross edge", separate from the tree
+ * edges `parent` already produces. `dependencies` no longer has any
+ * containment meaning (there used to be a rule that a parent's
+ * dependencies must mirror its own children -- removed: containment
+ * is fully expressed by `parent` already, and conflating it with
+ * `dependencies` blurred the one thing `dependencies` is actually
+ * for -- "this node's code imports/references that node's unit". See
+ * addDependency's doc comment for the current source/target rules.
+ * The `!childIds.has(dep)` guard below is defensive only, in case a
+ * hand-edited graph.yaml still lists a real child as a dependency.
  */
 function computeCrossEdges(normalized) {
   const { nodesById } = normalized;
@@ -366,21 +370,40 @@ const PROTOCOL_REGISTRY = {
   "entrypoint": {
     label: "Application entrypoint (backbone)",
     color: "#a78bfa", // purple
-    // Renamed from "rest" -- Revision 3 generalizes this off HTTP/REST
-    // specifically (a future CLI or gRPC entrypoint is equally "an
-    // entrypoint"). Deliberate scope boundary: http_method/route stay
-    // on `function` nodes exactly as-is for now -- those are still
-    // REST-specific vocabulary, and generalizing THEM is deferred
-    // until an actual second entrypoint kind exists to justify it.
-    allowedChildren: ["module", "function"],
+    // Now purely structural -- the ONE required root of the file
+    // (buildPath/validate-graph.js's backbone logic both still assume
+    // exactly one). It generates nothing of its own (never leaf-
+    // capable, never skeleton-eligible) and now only ever holds
+    // `gateway` children -- real content starts one level down.
+    allowedChildren: ["gateway"],
     fields: [],
     leafCapable: false,
-    // No `language` constant here or on any protocol below except
-    // browser-js -- Revision 3 moves language from a per-protocol
-    // registry constant to per-node data (see LANGUAGE resolution
-    // below). A node's effective language is now resolved by walking
-    // up to the nearest ancestor `module` that declares one, falling
-    // back to the graph's own default_language.
+  },
+  "gateway": {
+    label: "Gateway (communication/transport boundary)",
+    color: "#9ca3af", // gray -- infrastructure, deliberately understated next to service's color
+    // Purely organizational, like entrypoint: groups the service(s)
+    // reachable through one transport. Never itself a generated file
+    // (not leaf-capable, not skeleton-eligible) -- see buildPath's
+    // explicit skip of `gateway` ancestors, so it never appears as a
+    // path segment either. `transport` is deliberately the only field
+    // for now -- routing/load-balancer/gateway-spec details are an
+    // explicitly deferred future extension, not guessed at here.
+    allowedChildren: ["service"],
+    fields: ["transport"],
+    leafCapable: false,
+  },
+  "service": {
+    label: "Service (independently deployable unit)",
+    color: "#fb923c", // orange
+    // Takes over what `entrypoint` used to allow directly -- a
+    // service is "the entry-point to that service/package of
+    // modules." `language` here (not on entrypoint/gateway) is what
+    // resolveLanguage's ancestor-walk now also stops at, same shape
+    // and inheritance-to-descendants behavior as `module.language`.
+    allowedChildren: ["function", "module"],
+    fields: ["language"],
+    leafCapable: false,
   },
   "module": {
     label: "Module (service/package)",
@@ -390,7 +413,12 @@ const PROTOCOL_REGISTRY = {
     // "language" is a new field here (not a registry constant) --
     // optional; only `module` nodes can declare it, inherited by
     // everything below unless overridden by a nested module.
-    fields: ["exports", "layout", "language"],
+    // "tests"/"stub_behavior" here (like on every protocol below that
+    // lists them) just control the edit-form's optional-field
+    // visibility -- both are actually top-level node fields
+    // (node.tests/node.stub_behavior), not under `interface`, and
+    // exist on every node's default shape already (see emptyNodeFor).
+    fields: ["exports", "layout", "language", "tests", "stub_behavior"],
     leafCapable: false,
   },
   "function": {
@@ -420,7 +448,7 @@ const PROTOCOL_REGISTRY = {
     label: "Frontend/JS surface",
     color: "#fbbf24", // amber
     allowedChildren: [],
-    fields: ["exports", "stub_behavior"],
+    fields: ["exports", "stub_behavior", "tests"],
     leafCapable: true,
     connectsVia: "dependencies",
     // Deliberately UNCHANGED by Revision 3 -- frontend is its own,
@@ -468,7 +496,7 @@ const PROTOCOL_REGISTRY = {
     // sub-field name) -- a little odd to read, not a bug; the two
     // "fields" mean different things (which sub-fields this protocol
     // renders vs. this class's own instance attributes).
-    fields: ["fields"],
+    fields: ["fields", "tests", "stub_behavior"],
     leafCapable: false,
   },
 };
@@ -478,6 +506,22 @@ const PROTOCOL_REGISTRY = {
 // the graph, or it becomes an orphaned reference the moment the file
 // is reloaded anywhere else.
 const BUILTIN_PROTOCOL_IDS = new Set(Object.keys(PROTOCOL_REGISTRY));
+
+/**
+ * Protocols that can hold a `prompt_template` override at all -- i.e.
+ * everything that (per isLeafCapable/isSkeletonEligible in
+ * prompt-generator.js) actually holds/produces real code and gets
+ * worked on by a coding agent. `entrypoint` is deliberately excluded
+ * -- it never generates anything (isLeafCapable=false,
+ * isSkeletonEligible=false, so nodeKind is always null for it).
+ * A protocol being IN this list doesn't guarantee a prompt gets
+ * generated right now for every instance (e.g. a `layout: folder`
+ * module still has no single shared file to skeleton) -- that
+ * instance-level decision stays with nodeKind/isPromptable, unchanged
+ * by this list. This only gates whether the override FIELD is shown
+ * at all for the protocol.
+ */
+const PROMPT_TEMPLATE_PROTOCOLS = ["function", "module", "class", "browser-js", "data-model", "contract"];
 
 /**
  * Overwrites PROTOCOL_REGISTRY (and BUILTIN_PROTOCOL_IDS, derived
@@ -677,15 +721,97 @@ function deleteNode(nodesById, nodeId) {
   return nodesById;
 }
 
+/**
+ * `dependencies` means "this node's code imports/references that
+ * node's unit" -- a real import edge, not containment (containment is
+ * `parent`'s job alone; see computeCrossEdges's doc comment above).
+ *
+ * Source: only `module`/`class` nodes may HOLD a dependency. A module
+ * or class is the thing that actually has an import section in the
+ * generated file; a `function` (or any other leaf) doesn't get its
+ * own -- it inherits whatever its containing module/class imports.
+ * See effectiveDependencies below for how a leaf's inherited set is
+ * resolved (computed on the fly, never stored on the leaf itself).
+ *
+ * Target: only `module`, `data-model` (any model_kind: dto, db_schema,
+ * enum, constant), and `contract` nodes are importable units.
+ * `function`, `class`, `entrypoint`, `browser-js` are not valid
+ * dependency targets -- you don't "import" a function, you call it
+ * (see `calls`); a class you `implements`, not depend on.
+ */
+const DEPENDENCY_SOURCE_PROTOCOLS = ["module", "class"];
+const DEPENDENCY_TARGET_PROTOCOLS = ["module", "data-model", "contract"];
+
+function protocolOf(node) {
+  return node && node.interface && node.interface.protocol;
+}
+
+/**
+ * The subset of `nodesById` eligible as a dependency TARGET -- powers
+ * the "add a dependency" <select> so it never offers an invalid
+ * target to begin with. Returned as a sorted array of ids.
+ */
+function dependencyTargetIds(nodesById) {
+  return Object.values(nodesById)
+    .filter((n) => DEPENDENCY_TARGET_PROTOCOLS.includes(protocolOf(n)))
+    .map((n) => n.id)
+    .sort();
+}
+
 function addDependency(nodesById, fromId, toId) {
   const node = nodesById[fromId];
   if (!node) throw new Error(`Node '${fromId}' does not exist.`);
-  if (!nodesById[toId]) throw new Error(`Cannot depend on '${toId}': it does not exist.`);
+  const target = nodesById[toId];
+  if (!target) throw new Error(`Cannot depend on '${toId}': it does not exist.`);
   if (fromId === toId) throw new Error(`A node cannot depend on itself.`);
+  const fromProto = protocolOf(node);
+  if (!DEPENDENCY_SOURCE_PROTOCOLS.includes(fromProto)) {
+    throw new Error(
+      `'${fromId}' is protocol '${fromProto}' -- only ${DEPENDENCY_SOURCE_PROTOCOLS.join("/")} nodes can hold a ` +
+      `dependency. A function/leaf inherits its imports from its containing module or class instead.`
+    );
+  }
+  const toProto = protocolOf(target);
+  if (!DEPENDENCY_TARGET_PROTOCOLS.includes(toProto)) {
+    throw new Error(
+      `Cannot depend on '${toId}': it is protocol '${toProto}', not ${DEPENDENCY_TARGET_PROTOCOLS.join("/")} -- ` +
+      `only modules and data-models (dto/db_schema/enum/constant) are importable units.`
+    );
+  }
   const existing = depIds(node);
   if (existing.includes(toId)) return nodesById; // no-op, already present
   node.dependencies = [...(node.dependencies || []), { node: toId }];
   return nodesById;
+}
+
+/**
+ * A leaf's (or any non module/class node's) actual imports, resolved
+ * on the fly -- never stored on the leaf itself, matching the
+ * project's "derived values are computed, not cached" rule. Walks up
+ * `parent` to the nearest module/class ancestor and returns THAT
+ * node's own (authored) dependencies. Returns { ownerId, deps }:
+ * `ownerId` is null (and `deps` []) if the node itself already is a
+ * module/class (nothing to inherit -- use depIds(node) directly) or
+ * if no module/class ancestor exists at all (e.g. an orphaned node).
+ */
+function effectiveDependencies(nodeId, nodesById) {
+  const node = nodesById[nodeId];
+  if (!node) return { ownerId: null, deps: [] };
+  if (DEPENDENCY_SOURCE_PROTOCOLS.includes(protocolOf(node))) {
+    return { ownerId: null, deps: depIds(node) }; // it owns its own list already
+  }
+  let cur = node;
+  const seen = new Set(); // defensive: a cyclic `parent` chain should never happen, but never loop forever
+  while (cur && cur.parent && !seen.has(cur.parent)) {
+    seen.add(cur.parent);
+    const parentNode = nodesById[cur.parent];
+    if (!parentNode) break;
+    if (DEPENDENCY_SOURCE_PROTOCOLS.includes(protocolOf(parentNode))) {
+      return { ownerId: parentNode.id, deps: depIds(parentNode) };
+    }
+    cur = parentNode;
+  }
+  return { ownerId: null, deps: [] };
 }
 
 /**
@@ -698,9 +824,11 @@ function addDependency(nodesById, fromId, toId) {
  * time, not only later by validate_graph.py.
  */
 /**
- * Resolves a node's effective language under Revision 3's node-level
- * mechanism: walk up from the node itself through `parent` looking for
- * the nearest ancestor `module` that declares `interface.language`,
+ * Resolves a node's effective language: walk up from the node itself
+ * through `parent` looking for the nearest ancestor `module` OR
+ * `service` that declares `interface.language` (a `service` sits
+ * above its modules in the tree, same inheritance shape as `module`'s
+ * own -- either can be where a language is actually declared),
  * falling back to the graph's own `default_language` (mirrors
  * `default_boundary`'s existing fallback pattern), then `undefined` if
  * nothing anywhere declares one at all.
@@ -718,7 +846,8 @@ function resolveLanguage(nodeId, nodesById, registry, defaultLanguage) {
 
   let cur = node;
   while (cur) {
-    if (cur.interface && cur.interface.protocol === "module" && cur.interface.language) {
+    const curProto = cur.interface && cur.interface.protocol;
+    if ((curProto === "module" || curProto === "service") && cur.interface.language) {
       return cur.interface.language;
     }
     cur = cur.parent ? nodesById[cur.parent] : null;
@@ -787,8 +916,14 @@ function buildPath(nodeId, normalized, registry) {
   const chain = [];
   let curId = node.parent;
   while (curId && curId !== backbone) {
-    chain.unshift(curId);
     const cur = nodesById[curId];
+    // `gateway` is purely organizational (which transport a service
+    // sits behind) -- it never becomes a real directory. `service`
+    // DOES become one (the top-level folder for that independently
+    // deployable unit) -- only gateway is skipped here, nothing else.
+    if (!(cur && cur.interface && cur.interface.protocol === "gateway")) {
+      chain.unshift(curId);
+    }
     curId = cur ? cur.parent : null;
   }
   const language = resolveLanguage(nodeId, nodesById, registry, normalized.defaultLanguage);
@@ -850,11 +985,26 @@ function mapsToIds(node) {
   return (node.maps_to || []).map((d) => (typeof d === "string" ? d : d.node));
 }
 
+/**
+ * Only `data-model` nodes may hold a `maps_to` -- it's a shape-to-shape
+ * type mapping (e.g. a DB row -> a DTO), so only a shape-bearing node
+ * has anything to map. Target is deliberately left unrestricted
+ * (a DTO can map to another DTO, a DB schema, an enum, etc.).
+ */
+const MAPS_TO_SOURCE_PROTOCOLS = ["data-model"];
+
 function addMapsTo(nodesById, fromId, toId) {
   const node = nodesById[fromId];
   if (!node) throw new Error(`Node '${fromId}' does not exist.`);
   if (!nodesById[toId]) throw new Error(`Cannot map to '${toId}': it does not exist.`);
   if (fromId === toId) throw new Error(`A node cannot map to itself.`);
+  const fromProto = protocolOf(node);
+  if (!MAPS_TO_SOURCE_PROTOCOLS.includes(fromProto)) {
+    throw new Error(
+      `'${fromId}' is protocol '${fromProto}' -- only ${MAPS_TO_SOURCE_PROTOCOLS.join("/")} nodes can hold a ` +
+      `maps_to (it's a shape-to-shape mapping; only a shape-bearing node has a shape to map).`
+    );
+  }
   const existing = mapsToIds(node);
   if (existing.includes(toId)) return nodesById; // no-op, already present
   node.maps_to = [...(node.maps_to || []), toId];
@@ -906,12 +1056,25 @@ function implementsIds(node) {
   return (node.implements || []).map((d) => (typeof d === "string" ? d : d.node));
 }
 
+/**
+ * Only `class` nodes may hold an `implements` -- a class fulfills a
+ * contract's method signatures; nothing else does. Target stays
+ * restricted to `contract` (checked below already).
+ */
+const IMPLEMENTS_SOURCE_PROTOCOLS = ["class"];
+
 function addImplements(nodesById, fromId, toId) {
   const node = nodesById[fromId];
   if (!node) throw new Error(`Node '${fromId}' does not exist.`);
   const target = nodesById[toId];
   if (!target) throw new Error(`Cannot implement '${toId}': it does not exist.`);
   if (fromId === toId) throw new Error(`A node cannot implement itself.`);
+  const fromProto = protocolOf(node);
+  if (!IMPLEMENTS_SOURCE_PROTOCOLS.includes(fromProto)) {
+    throw new Error(
+      `'${fromId}' is protocol '${fromProto}' -- only ${IMPLEMENTS_SOURCE_PROTOCOLS.join("/")} nodes can implement a contract.`
+    );
+  }
   const targetProto = target.interface && target.interface.protocol;
   if (targetProto !== "contract") {
     throw new Error(`Cannot implement '${toId}': it is protocol '${targetProto}', not 'contract'.`);
@@ -1085,7 +1248,9 @@ const GraphModel = {
   LANGUAGE_EXTENSIONS, buildPath,
   applyStatusConfig, applyProtocolRegistryConfig,
   // write side
-  PROTOCOL_REGISTRY, BUILTIN_PROTOCOL_IDS, depIds, mapsToIds, implementsIds,
+  PROTOCOL_REGISTRY, BUILTIN_PROTOCOL_IDS, PROMPT_TEMPLATE_PROTOCOLS, depIds, mapsToIds, implementsIds,
+  DEPENDENCY_SOURCE_PROTOCOLS, DEPENDENCY_TARGET_PROTOCOLS, dependencyTargetIds, effectiveDependencies,
+  MAPS_TO_SOURCE_PROTOCOLS, IMPLEMENTS_SOURCE_PROTOCOLS,
   registerCustomProtocol, restoreCustomProtocols, emptyNodeFor, validateAddChild,
   addNode, deleteNode, addDependency, removeDependency, addMapsTo, removeMapsTo,
   addImplements, removeImplements,

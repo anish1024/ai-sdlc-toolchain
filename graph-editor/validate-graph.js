@@ -115,15 +115,32 @@ function validateGraph(normalized, registry) {
     }
   }
 
-  // 3b. No dangling maps_to references.
+  // 3b. No dangling maps_to references, and only data-model nodes may
+  // hold one (mirrors GraphModel.addMapsTo's own check, swept over the
+  // whole graph so a hand-edited graph.yaml is caught too).
   for (const n of nodes) {
+    const ownMapsTo = n.maps_to || [];
+    if (ownMapsTo.length && (!n.interface || !GraphModel.MAPS_TO_SOURCE_PROTOCOLS.includes(n.interface.protocol))) {
+      errors.push(
+        `node '${n.id}' has protocol '${n.interface && n.interface.protocol}' but holds maps_to -- only ` +
+        `${GraphModel.MAPS_TO_SOURCE_PROTOCOLS.join("/")} nodes may hold a maps_to`
+      );
+    }
     for (const targetId of GraphModel.mapsToIds(n)) {
       if (!nodesById[targetId]) errors.push(`node '${n.id}' maps_to '${targetId}' which does not exist`);
     }
   }
 
-  // 3c. implements target(s) must actually be `contract` nodes.
+  // 3c. Only `class` nodes may hold implements, and target(s) must
+  // actually be `contract` nodes (mirrors GraphModel.addImplements).
   for (const n of nodes) {
+    const ownImplements = n.implements || [];
+    if (ownImplements.length && (!n.interface || !GraphModel.IMPLEMENTS_SOURCE_PROTOCOLS.includes(n.interface.protocol))) {
+      errors.push(
+        `node '${n.id}' has protocol '${n.interface && n.interface.protocol}' but holds implements -- only ` +
+        `${GraphModel.IMPLEMENTS_SOURCE_PROTOCOLS.join("/")} nodes may implement a contract`
+      );
+    }
     for (const targetId of GraphModel.implementsIds(n)) {
       const target = nodesById[targetId];
       if (!target) {
@@ -242,14 +259,37 @@ function validateGraph(normalized, registry) {
     }
   }
 
-  // 4. A parent's dependencies must include ALL its children.
+  // 4. Dependency source/target protocol restrictions (mirrors
+  // GraphModel.addDependency's own checks, but swept over the WHOLE
+  // graph -- this catches a hand-edited graph.yaml that never went
+  // through the editor's add-dependency UI, not just new additions).
+  // `dependencies` means "this node's code imports/references that
+  // node's unit": only module/class nodes may hold one (a function
+  // inherits its imports from its containing module/class instead --
+  // see GraphModel.effectiveDependencies), and only module/data-model
+  // nodes are valid targets (you call or implement a function/
+  // contract, you don't import it).
   for (const n of nodes) {
-    const childIds = new Set(GraphModel.childrenOf(n.id, nodesById).map((c) => c.id));
-    if (childIds.size) {
-      const depIds = new Set(GraphModel.depIds(n));
-      const missing = [...childIds].filter((id) => !depIds.has(id));
-      if (missing.length) {
-        errors.push(`node '${n.id}' has children ${missing.sort().join(", ")} missing from its own dependencies list (a split node must list every child it created, since it literally calls them)`);
+    const ownDeps = n.dependencies || [];
+    if (!ownDeps.length) continue;
+    const nProto = n.interface && n.interface.protocol;
+    if (!GraphModel.DEPENDENCY_SOURCE_PROTOCOLS.includes(nProto)) {
+      errors.push(
+        `node '${n.id}' has protocol '${nProto}' but holds dependencies -- only ` +
+        `${GraphModel.DEPENDENCY_SOURCE_PROTOCOLS.join("/")} nodes may hold a dependency ` +
+        `(a leaf inherits its imports from its containing module/class instead)`
+      );
+      continue; // target checks below don't add useful info on top of this
+    }
+    for (const depId of GraphModel.depIds(n)) {
+      const target = nodesById[depId];
+      if (!target) continue; // already an error from check 3
+      const tProto = target.interface && target.interface.protocol;
+      if (!GraphModel.DEPENDENCY_TARGET_PROTOCOLS.includes(tProto)) {
+        errors.push(
+          `node '${n.id}' depends on '${depId}', but that node has protocol '${tProto}' -- ` +
+          `only ${GraphModel.DEPENDENCY_TARGET_PROTOCOLS.join("/")} nodes are valid dependency targets`
+        );
       }
     }
   }

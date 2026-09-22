@@ -109,16 +109,50 @@ function isPromptable(node, normalized, registry) {
   return node.status === "stub" || node.status === "implementing";
 }
 
-function buildGuardrail(node, nodeId) {
+/**
+ * True exactly when buildPath would collapse this node into its
+ * parent's file -- i.e. a `function` whose parent isn't the backbone
+ * (every function under a `class`, and every function under a
+ * `layout: file` module). Mirrors buildPath's own one-line condition
+ * (graph-model.js) rather than calling it twice; the path computation
+ * itself still lives there, this just repeats the same test to decide
+ * guardrail wording below.
+ */
+function functionHasSharedFile(node, normalized) {
+  if (!node.interface || node.interface.protocol !== "function") return false;
+  return !!(node.parent && normalized && node.parent !== normalized.backbone);
+}
+
+function buildGuardrail(node, nodeId, normalized) {
   const action = actionForStatus(node.status);
   const version = node.contract_version || "0.0.0";
+  const shared = functionHasSharedFile(node, normalized);
   if (action === "CREATE") {
+    if (shared) {
+      return (
+        `ACTION: CREATE (status=stub, version=${version}). '${nodeId}' itself doesn't exist yet, but ` +
+        `its FILE may already -- this function's file is shared with its containing class/module and ` +
+        `possibly sibling functions (a skeleton pass, or a sibling's own implementation pass, may have ` +
+        `already created it). If the file already exists: open it and add ONLY '${nodeId}''s body -- do ` +
+        `NOT recreate the file, and do not touch any other function, import, or class wiring already in ` +
+        `it. If the file genuinely doesn't exist yet, create it containing just '${nodeId}' plus whatever ` +
+        `imports it needs.`
+      );
+    }
     return (
       `ACTION: CREATE (status=stub, version=${version}). This file/function does not exist yet. ` +
       `Create it. Do not modify any file or function belonging to any node other than '${nodeId}'.`
     );
   }
   if (action === "UPDATE") {
+    if (shared) {
+      return (
+        `ACTION: UPDATE (status=implementing, version=${version}). An implementation for '${nodeId}' ` +
+        `already exists, inside a file shared with its containing class/module and possibly sibling ` +
+        `functions. This is a targeted change -- touch ONLY '${nodeId}''s own body. Do not modify any ` +
+        `other function, import, or class wiring already present in that file.`
+      );
+    }
     return (
       `ACTION: UPDATE (status=implementing, version=${version}). An implementation for '${nodeId}' ` +
       `already exists. This is a targeted change -- touch only '${nodeId}''s own file/function. ` +
@@ -184,6 +218,28 @@ function renderInterfaceBlock(node, nodeId) {
 }
 
 /**
+ * `node.tests` (top-level field, NOT under `interface` -- same as
+ * `stub_behavior`) rendered as one line per case. Kept as its own
+ * placeholder rather than folded into {interface}, matching the
+ * existing "independently cherry-pickable in a custom template"
+ * treatment already used for the four relationship lines below.
+ */
+function renderTestsBlock(node) {
+  const tests = node.tests || [];
+  if (!tests.length) return "";
+  const lines = tests.map((t) => {
+    const given = "given" in t ? JSON.stringify(t.given) : "(none)";
+    const outcome = "expect_raises" in t
+      ? `raises ${t.expect_raises}`
+      : `expect ${JSON.stringify(t.expect)}`;
+    const label = t.id ? `Test ${t.id}` : "Test";
+    const desc = t.description ? ` -- ${t.description}` : "";
+    return `${label}: given ${given}, ${outcome}${desc}`;
+  });
+  return lines.join("\n");
+}
+
+/**
  * The function-child stubs a skeleton pass needs to declare (signature
  * only, body deferred to that function's own separate implementation
  * prompt). Used for both `class` and `layout: file` `module` skeletons.
@@ -213,7 +269,11 @@ function placeholderValues(node, nodeId, normalized, registry) {
   const nodesById = normalized.nodesById;
 
   const depsText = (() => {
-    const d = GraphModel.depIds(node);
+    // Only module/class nodes hold their own dependencies now; a leaf
+    // (function/data-model/contract/...) inherits whatever its
+    // containing module/class imports -- resolved fresh here rather
+    // than read off the node itself. See GraphModel.effectiveDependencies.
+    const { deps: d } = GraphModel.effectiveDependencies(nodeId, nodesById);
     if (!d.length) return "";
     // Full relative paths, not bare node ids -- lets a reader (or a
     // downstream tool) go straight from "depends on" to the actual
@@ -252,7 +312,7 @@ function placeholderValues(node, nodeId, normalized, registry) {
     language: GraphModel.resolveLanguage(nodeId, nodesById, registry, normalized.defaultLanguage) || "",
     action: actionForStatus(node.status) || "",
     path: GraphModel.buildPath(nodeId, normalized, registry),
-    guardrail: buildGuardrail(node, nodeId),
+    guardrail: buildGuardrail(node, nodeId, normalized),
     scope_note: buildScopeNote(node, nodeId),
     signature: node.interface && node.interface.protocol === "function" ? GraphView.formatSignature({ ...node, id: nodeId }) : "",
     interface: (() => { const t = renderInterfaceBlock(node, nodeId); return t.trim() ? `## Interface\n${t}` : ""; })(),
@@ -278,6 +338,7 @@ function placeholderValues(node, nodeId, normalized, registry) {
     relationships_header: (depsText || callsText || dataFlowsText || mapsToText) ? "## Relationships" : "",
     notes: node.notes && node.notes.trim() ? `## Notes\n${node.notes}` : "",
     stub_behavior: node.stub_behavior && node.stub_behavior.trim() ? `## Stub behavior\n${node.stub_behavior}` : "",
+    tests: (() => { const t = renderTestsBlock(node); return t ? `## Tests to satisfy\n${t}` : ""; })(),
   };
 }
 
@@ -287,6 +348,8 @@ Path: {path}
 {guardrail}
 
 {interface}
+
+{tests}
 
 {relationships_header}
 {dependencies}
@@ -450,6 +513,7 @@ function generatePromptManifest(normalized, registry) {
 
 const GraphPromptGen = {
   actionForStatus, isLeafCapable, isSkeletonEligible, nodeKind, isPromptable, buildGuardrail, buildScopeNote,
+  functionHasSharedFile, renderTestsBlock,
   renderInterfaceBlock, renderChildFunctionSignatures, MODEL_KIND_LABELS,
   buildDirectoryStructure, renderDirectoryTree,
   placeholderValues, applyTemplate, DEFAULT_TEMPLATE, DEFAULT_SKELETON_TEMPLATE,

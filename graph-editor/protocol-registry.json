@@ -2,15 +2,29 @@
   "entrypoint": {
     "label": "Application entrypoint (backbone)",
     "color": "#a78bfa",
-    "allowedChildren": ["module", "function"],
+    "allowedChildren": ["gateway"],
     "fields": [],
+    "leafCapable": false
+  },
+  "gateway": {
+    "label": "Gateway (communication/transport boundary)",
+    "color": "#9ca3af",
+    "allowedChildren": ["service"],
+    "fields": ["transport"],
+    "leafCapable": false
+  },
+  "service": {
+    "label": "Service (independently deployable unit)",
+    "color": "#fb923c",
+    "allowedChildren": ["function", "module"],
+    "fields": ["language"],
     "leafCapable": false
   },
   "module": {
     "label": "Module (service/package)",
     "color": "#2dd4bf",
     "allowedChildren": ["function", "module", "data-model", "contract", "class"],
-    "fields": ["exports", "layout", "language"],
+    "fields": ["exports", "layout", "language", "tests", "stub_behavior"],
     "leafCapable": false
   },
   "function": {
@@ -24,7 +38,7 @@
     "label": "Frontend/JS surface",
     "color": "#fbbf24",
     "allowedChildren": [],
-    "fields": ["exports", "stub_behavior"],
+    "fields": ["exports", "stub_behavior", "tests"],
     "leafCapable": true,
     "connectsVia": "dependencies",
     "language": "javascript"
@@ -47,7 +61,7 @@
     "label": "Class (implements a contract)",
     "color": "#34d399",
     "allowedChildren": ["function"],
-    "fields": ["fields"],
+    "fields": ["fields", "tests", "stub_behavior"],
     "leafCapable": false
   }
 }

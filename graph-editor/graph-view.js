@@ -55,6 +55,28 @@ function formatSignature(node) {
   return `${node.id || ""}(${params}) -> ${ret}`;
 }
 
+/**
+ * Pan/zoom persistence across re-renders.
+ *
+ * renderGraph() wipes and rebuilds the whole <svg> on every call (it's
+ * the simplest way to keep the D3 tree in sync with `normalized`), which
+ * used to mean recomputing an auto-fit transform every single time --
+ * so any action that triggers a re-render (editing a field, deleting a
+ * node, toggling collapse, even just opening the detail panel after
+ * Save) silently yanked the view back to the fitted default and threw
+ * away wherever the user had panned/zoomed to. That's jarring for
+ * anything beyond a trivial graph.
+ *
+ * Fix: remember the last transform actually in effect (module-level,
+ * survives across calls since this file's top-level bindings persist
+ * for the life of the page) and re-apply it instead of recomputing the
+ * fit, UNLESS this is the very first render (nothing to restore yet)
+ * or the caller explicitly asks for a fresh fit via state.resetView
+ * (used for "New graph" / "Load a different graph.yaml", where the
+ * old pan position has nothing to do with the newly loaded structure).
+ */
+let _lastGraphTransform = null;
+
 /* =======================================================================
  * Tooltip (pure DOM, no app state)
  * ===================================================================== */
@@ -112,7 +134,7 @@ function showToast(message, type = "info", duration = 3500) {
  * Detail panel — read-only view
  * ===================================================================== */
 
-function renderViewPanel(node, nodeId) {
+function renderViewPanel(node, nodeId, nodesById) {
   const color = GraphModel.STATUS_COLORS[node.status] || "#666";
   let html = `<h2>${escapeHtml(node.title || nodeId)}</h2>`;
   html += `<div class="node-id">${escapeHtml(nodeId)}</div>`;
@@ -184,9 +206,14 @@ function renderViewPanel(node, nodeId) {
     html += `</section>`;
   }
 
-  const deps = GraphModel.depIds(node);
+  // Only module/class nodes hold their own dependencies; anything
+  // else (function, contract, data-model, ...) inherits whatever its
+  // containing module/class imports -- resolved fresh here, never
+  // stored on the leaf itself. See GraphModel.effectiveDependencies.
+  const { ownerId, deps } = GraphModel.effectiveDependencies(nodeId, nodesById || {});
   if (deps.length) {
-    html += `<section><h3>Dependencies (${deps.length})</h3>`;
+    const heading = ownerId ? `Dependencies (${deps.length}, inherited from '${escapeHtml(ownerId)}')` : `Dependencies (${deps.length})`;
+    html += `<section><h3>${heading}</h3>`;
     for (const dep of deps) html += `<span class="dep-chip"><span class="dep-name" data-dep="${escapeHtml(dep)}">${escapeHtml(dep)}</span></span>`;
     html += `</section>`;
   }
@@ -260,9 +287,10 @@ function renderViewPanel(node, nodeId) {
  * `otherNodeIds`) for the same "stay a pure mapping, no implicit
  * state" reason; it populates the "add an implements relationship"
  * <select>, which is intentionally restricted to contract nodes only
- * (unlike Maps to / Dependencies, which offer every node).
+ * (unlike Maps to, which still offers every node as a target --
+ * Dependencies is separately restricted too, via `depTargetIds`).
  */
-function renderEditForm(node, nodeId, registry, otherNodeIds, contractNodeIds, nodesById) {
+function renderEditForm(node, nodeId, registry, otherNodeIds, contractNodeIds, nodesById, depTargetIds) {
   const proto = node.interface.protocol;
   const rule = registry[proto] || { fields: [] };
 
@@ -305,6 +333,10 @@ function renderEditForm(node, nodeId, registry, otherNodeIds, contractNodeIds, n
   }
   if (rule.fields.includes("language")) {
     html += `<label class="field-label">Language (optional — inherited by everything under this module unless overridden by a nested module)</label><input type="text" id="f-language" placeholder="e.g. python" value="${escapeHtml(node.interface.language || "")}">`;
+  }
+  if (rule.fields.includes("transport")) {
+    html += `<label class="field-label">Transport (how the service(s) behind this gateway are reached)</label><input type="text" id="f-transport" placeholder="e.g. http, grpc, queue, websocket" value="${escapeHtml(node.interface.transport || "")}">`;
+    html += `<div class="readonly-note">Free text for now -- routing/load-balancer/gateway-spec fields are a deferred future extension, not modeled yet.</div>`;
   }
   if (rule.fields.includes("http_method")) {
     html += `<label class="field-label">HTTP method (leave both this and Route blank if not a REST endpoint)</label><input type="text" id="f-http-method" placeholder="e.g. POST" value="${escapeHtml(node.interface.http_method || "")}">`;
@@ -366,52 +398,78 @@ function renderEditForm(node, nodeId, registry, otherNodeIds, contractNodeIds, n
   }
   html += `</section>`;
 
-  html += `<section><h3>Dependencies</h3><div id="f-deps-list">`;
-  const deps = GraphModel.depIds(node);
-  for (const dep of deps) {
-    html += `<span class="dep-chip"><span class="dep-name">${escapeHtml(dep)}</span><span class="rm" data-rm-dep="${escapeHtml(dep)}">×</span></span>`;
+  // Only module/class nodes hold their own dependencies -- see
+  // GraphModel.addDependency's doc comment for why (a function/leaf
+  // isn't the thing that has an import section; its module/class is).
+  // Anything else gets a read-only view of what it inherits from its
+  // nearest module/class ancestor, resolved on the fly, never stored.
+  if (GraphModel.DEPENDENCY_SOURCE_PROTOCOLS.includes(proto)) {
+    html += `<section><h3>Dependencies</h3><div id="f-deps-list">`;
+    const deps = GraphModel.depIds(node);
+    for (const dep of deps) {
+      html += `<span class="dep-chip"><span class="dep-name">${escapeHtml(dep)}</span><span class="rm" data-rm-dep="${escapeHtml(dep)}">×</span></span>`;
+    }
+    html += `</div>`;
+    html += `<select id="f-add-dep-select" style="margin-top:8px">`;
+    html += `<option value="">— add a dependency —</option>`;
+    for (const id of (depTargetIds || [])) {
+      if (id === nodeId || deps.includes(id)) continue;
+      html += `<option value="${escapeHtml(id)}">${escapeHtml(id)}</option>`;
+    }
+    html += `</select>`;
+    html += `<div class="readonly-note">Only modules and data-models (dto/db_schema/enum/constant) are valid targets -- a module/class imports another importable unit, it doesn't "depend on" a function or contract.</div>`;
+    html += `</section>`;
+  } else {
+    const { ownerId, deps } = GraphModel.effectiveDependencies(nodeId, nodesById || {});
+    html += `<section><h3>Dependencies</h3>`;
+    if (deps.length) {
+      html += `<div id="f-deps-list">`;
+      for (const dep of deps) html += `<span class="dep-chip"><span class="dep-name">${escapeHtml(dep)}</span></span>`;
+      html += `</div>`;
+      html += `<div class="readonly-note">Inherited (read-only) from containing module/class '${escapeHtml(ownerId)}' -- a leaf doesn't hold its own dependencies; edit them on '${escapeHtml(ownerId)}' instead.</div>`;
+    } else {
+      html += `<div class="readonly-note">No containing module/class holds any dependencies yet (or this node has none) -- a leaf inherits its imports from its containing module/class rather than holding its own.</div>`;
+    }
+    html += `</section>`;
   }
-  html += `</div>`;
-  html += `<select id="f-add-dep-select" style="margin-top:8px">`;
-  html += `<option value="">— add a dependency —</option>`;
-  for (const id of otherNodeIds) {
-    if (id === nodeId || deps.includes(id)) continue;
-    html += `<option value="${escapeHtml(id)}">${escapeHtml(id)}</option>`;
-  }
-  html += `</select>`;
-  html += `</section>`;
 
   // maps_to is a top-level, sibling-to-dependencies node property
   // (not an interface field governed by the registry's `fields`
   // list -- see graph-model.js's addMapsTo doc comment), so it's
   // gated on the protocol directly rather than on `rule.fields`.
-  // Only data-model nodes have a meaningful use for it today, but any
-  // node could in principle map to a data-model, so the section is
-  // offered whenever there's at least one data-model node to target.
+  // Only `data-model` nodes may hold a maps_to (GraphModel.addMapsTo
+  // enforces this) -- it's a shape-to-shape mapping, only a
+  // shape-bearing node has a shape to map. Editable there; read-only
+  // display of any pre-existing entries everywhere else (e.g. a
+  // hand-edited graph.yaml from before this restriction existed).
   const mapsTo = GraphModel.mapsToIds(node);
-  html += `<section><h3>Maps to</h3><div id="f-mapsto-list">`;
-  for (const target of mapsTo) {
-    html += `<span class="dep-chip maps-to-chip"><span class="dep-name">${escapeHtml(target)}</span><span class="rm" data-rm-mapsto="${escapeHtml(target)}">×</span></span>`;
+  if (GraphModel.MAPS_TO_SOURCE_PROTOCOLS.includes(proto)) {
+    html += `<section><h3>Maps to</h3><div id="f-mapsto-list">`;
+    for (const target of mapsTo) {
+      html += `<span class="dep-chip maps-to-chip"><span class="dep-name">${escapeHtml(target)}</span><span class="rm" data-rm-mapsto="${escapeHtml(target)}">×</span></span>`;
+    }
+    html += `</div>`;
+    html += `<select id="f-add-mapsto-select" style="margin-top:8px">`;
+    html += `<option value="">— add a maps-to mapping —</option>`;
+    for (const id of otherNodeIds) {
+      if (id === nodeId || mapsTo.includes(id)) continue;
+      html += `<option value="${escapeHtml(id)}">${escapeHtml(id)}</option>`;
+    }
+    html += `</select>`;
+    html += `<div class="readonly-note">A type mapping (e.g. a DB row shape → a service DTO), not a call — kept separate from Dependencies.</div>`;
+    html += `</section>`;
+  } else if (mapsTo.length) {
+    html += `<section><h3>Maps to</h3><div id="f-mapsto-list">`;
+    for (const target of mapsTo) html += `<span class="dep-chip maps-to-chip"><span class="dep-name">${escapeHtml(target)}</span></span>`;
+    html += `</div><div class="readonly-note">Read-only — only data-model nodes may hold a maps_to.</div></section>`;
   }
-  html += `</div>`;
-  html += `<select id="f-add-mapsto-select" style="margin-top:8px">`;
-  html += `<option value="">— add a maps-to mapping —</option>`;
-  for (const id of otherNodeIds) {
-    if (id === nodeId || mapsTo.includes(id)) continue;
-    html += `<option value="${escapeHtml(id)}">${escapeHtml(id)}</option>`;
-  }
-  html += `</select>`;
-  html += `<div class="readonly-note">A type mapping (e.g. a DB row shape → a service DTO), not a call — kept separate from Dependencies.</div>`;
-  html += `</section>`;
 
   // implements is a top-level, sibling-to-dependencies/maps_to node
   // property (not an interface field -- see graph-model.js's
-  // addImplements doc comment), same reason maps_to is gated outside
-  // `rule.fields`. Offered whenever there's at least one contract node
-  // to target, regardless of this node's own protocol -- same
-  // generosity as the Maps to section above.
+  // addImplements doc comment). Only `class` nodes may hold one
+  // (GraphModel.addImplements enforces this).
   const impl = GraphModel.implementsIds(node);
-  if (impl.length || contractNodeIds.length) {
+  if (GraphModel.IMPLEMENTS_SOURCE_PROTOCOLS.includes(proto)) {
     html += `<section><h3>Implements</h3><div id="f-implements-list">`;
     for (const target of impl) {
       html += `<span class="dep-chip implements-chip"><span class="dep-name">${escapeHtml(target)}</span><span class="rm" data-rm-implements="${escapeHtml(target)}">×</span></span>`;
@@ -426,6 +484,10 @@ function renderEditForm(node, nodeId, registry, otherNodeIds, contractNodeIds, n
     html += `</select>`;
     html += `<div class="readonly-note">"This class fulfills this contract's method signatures" — a structural fact, not a call, kept separate from Dependencies.</div>`;
     html += `</section>`;
+  } else if (impl.length) {
+    html += `<section><h3>Implements</h3><div id="f-implements-list">`;
+    for (const target of impl) html += `<span class="dep-chip implements-chip"><span class="dep-name">${escapeHtml(target)}</span></span>`;
+    html += `</div><div class="readonly-note">Read-only — only class nodes may hold an implements.</div></section>`;
   }
 
   // calls -- a third top-level, sibling-to-dependencies relationship
@@ -486,8 +548,7 @@ function renderEditForm(node, nodeId, registry, otherNodeIds, contractNodeIds, n
   // describe (each function child already has its own). Hence the
   // extra instance-level check here rather than adding it to
   // `module`'s static fields list, which would show it unconditionally.
-  const isFileLayoutModule = node.interface.protocol === "module" && GraphModel.inferredLayout(nodeId, { nodesById }) === GraphModel.LAYOUT_FILE;
-  if (rule.fields.includes("stub_behavior") || isFileLayoutModule) {
+  if (rule.fields.includes("stub_behavior")) {
     html += `<label class="field-label">Stub behavior</label><textarea id="f-stub-behavior">${escapeHtml(node.stub_behavior || "")}</textarea>`;
   }
   if (rule.fields.includes("tests")) {
@@ -496,7 +557,13 @@ function renderEditForm(node, nodeId, registry, otherNodeIds, contractNodeIds, n
 
   html += `<label class="field-label">Notes</label><textarea id="f-notes">${escapeHtml(node.notes || "")}</textarea>`;
 
-  html += `<label class="field-label">Prompt template override (optional — blank uses the built-in default for this protocol; see prompt-generator.js)</label><textarea id="f-prompt-template" placeholder="{id} {path} {language} {action} {signature} {preconditions} {postconditions} {errors} {calls} {data_flows} {dependencies} {children} {notes} {stub_behavior} {guardrail} {scope_note}">${escapeHtml(node.prompt_template || "")}</textarea>`;
+  // Only shown for protocols that actually hold/produce real code
+  // (see GraphModel.PROMPT_TEMPLATE_PROTOCOLS's doc comment) -- e.g.
+  // `entrypoint` never generates anything, so there's nothing for an
+  // override here to apply to.
+  if (GraphModel.PROMPT_TEMPLATE_PROTOCOLS.includes(proto)) {
+    html += `<label class="field-label">Prompt template override (optional — blank uses the built-in default for this protocol; see prompt-generator.js)</label><textarea id="f-prompt-template" placeholder="{id} {path} {language} {action} {signature} {preconditions} {postconditions} {errors} {tests} {calls} {data_flows} {dependencies} {children} {notes} {stub_behavior} {guardrail} {scope_note}">${escapeHtml(node.prompt_template || "")}</textarea>`;
+  }
 
   const promptKind = GraphPromptGen.nodeKind(node, { nodesById }, registry);
   if (promptKind) {
@@ -530,7 +597,7 @@ function renderAddChildPopupContent(parentId, parentProto, rule, registry) {
   return html;
 }
 
-const KNOWN_FIELD_OPTIONS = ["params", "returns", "exports", "model_kind", "model_fields", "methods", "tests", "stub_behavior", "http_method", "route", "layout", "fields", "language", "errors", "preconditions", "postconditions"];
+const KNOWN_FIELD_OPTIONS = ["params", "returns", "exports", "model_kind", "model_fields", "methods", "tests", "stub_behavior", "http_method", "route", "layout", "fields", "language", "transport", "errors", "preconditions", "postconditions"];
 // Curated palette offered when registering a custom protocol. Now
 // that a protocol's `color` is actually rendered (D3 node-box fill —
 // see renderGraph below), these need to be real hex values, not the
@@ -655,7 +722,10 @@ if (typeof document !== "undefined") {
  * plain arguments, and every click is reported back through a handler.
  *
  * @param {object} state
- *   normalized, registry, editMode, collapsedNodes (Set), selectedNodeId
+ *   normalized, registry, editMode, collapsedNodes (Set), selectedNodeId,
+ *   resetView (optional bool — force a fresh fit-to-content transform
+ *   instead of restoring the last pan/zoom; use for a newly created or
+ *   newly loaded graph, not for routine edits)
  * @param {object} handlers
  *   onNodeClick(d), onAddChildClick(event, parentId), onToggleCollapse(nodeId)
  */
@@ -687,9 +757,29 @@ function renderGraph(state, handlers) {
   const svg = d3.select("#svg");
   svg.classed("edit-mode", editMode);
   svg.selectAll("*").remove();
+
+  // Arrowhead marker for `write`-direction data_flow edges only -- a
+  // `read` (or unset) data_flow direction stays a plain line, per the
+  // "no arrow unless direction=write" spec. Re-added every render
+  // since the wipe above clears it along with everything else.
+  svg.append("defs").append("marker")
+    .attr("id", "data-flow-arrow")
+    .attr("viewBox", "0 -5 10 10")
+    .attr("refX", 8)
+    .attr("refY", 0)
+    .attr("markerWidth", 6)
+    .attr("markerHeight", 6)
+    .attr("orient", "auto")
+    .append("path")
+    .attr("d", "M0,-5L10,0L0,5")
+    .attr("fill", "#a3e635");
+
   const g = svg.append("g");
 
-  const zoom = d3.zoom().scaleExtent([0.2, 3]).on("zoom", (event) => g.attr("transform", event.transform));
+  const zoom = d3.zoom().scaleExtent([0.2, 3]).on("zoom", (event) => {
+    g.attr("transform", event.transform);
+    _lastGraphTransform = event.transform; // keep last-known pan/zoom in sync as the user interacts
+  });
   svg.call(zoom);
 
   const root = d3.hierarchy(tree, (d) => (collapsedNodes.has(d.id) ? null : d.children));
@@ -758,12 +848,17 @@ function renderGraph(state, handlers) {
   for (const e of dataFlowEdges) {
     const s = nodeById[e.source], t = nodeById[e.target];
     if (!s || !t) continue;
-    dataFlowLinkData.push({ source: s, target: t, dangling: e.dangling, sourceId: e.source, targetId: e.target });
+    dataFlowLinkData.push({ source: s, target: t, dangling: e.dangling, sourceId: e.source, targetId: e.target, direction: e.direction });
   }
   g.selectAll(".data-flow-link").data(dataFlowLinkData).join("path")
     .attr("class", (d) => "data-flow-link" + (d.dangling ? " dangling" : ""))
     .attr("data-source", (d) => d.sourceId)
     .attr("data-target", (d) => d.targetId)
+    // Only `write` gets an arrowhead (pointing at the node being
+    // written to) -- `read`, any other value, or unset stays a plain
+    // undirected line. Matches the explicit spec: no arrow unless
+    // direction=write.
+    .attr("marker-end", (d) => (d.direction === "write" ? "url(#data-flow-arrow)" : null))
     .attr("d", d3.linkHorizontal().x((d) => d.x).y((d) => d.y));
 
   const nodeG = g.selectAll(".node").data(root.descendants()).join("g")
@@ -837,12 +932,19 @@ function renderGraph(state, handlers) {
 
   const bounds = g.node().getBBox();
   const containerEl = document.getElementById("canvas-container");
-  const initialScale = Math.min(1, containerEl.clientWidth / (bounds.width + 100)) || 1;
-  const initialTransform = d3.zoomIdentity
-    .translate(containerEl.clientWidth / 2 - (bounds.x + bounds.width * 0.15) * initialScale,
-               containerEl.clientHeight / 2 - (bounds.y + bounds.height / 2) * initialScale)
-    .scale(initialScale);
-  svg.call(zoom.transform, initialTransform);
+  const fitScale = Math.min(1, containerEl.clientWidth / (bounds.width + 100)) || 1;
+  const fitTransform = d3.zoomIdentity
+    .translate(containerEl.clientWidth / 2 - (bounds.x + bounds.width * 0.15) * fitScale,
+               containerEl.clientHeight / 2 - (bounds.y + bounds.height / 2) * fitScale)
+    .scale(fitScale);
+
+  // Use the fit-to-content transform only on the very first draw, or
+  // when the caller explicitly wants a fresh view (new/loaded graph).
+  // Otherwise restore wherever the user had panned/zoomed to, so
+  // routine re-renders (save, delete, collapse, edit) don't reset it.
+  const transformToApply = (state.resetView || !_lastGraphTransform) ? fitTransform : _lastGraphTransform;
+  svg.call(zoom.transform, transformToApply);
+  _lastGraphTransform = transformToApply;
 
   if (selectedNodeId && normalized.nodesById[selectedNodeId]) {
     markSelected(selectedNodeId);

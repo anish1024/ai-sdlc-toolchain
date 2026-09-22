@@ -36,9 +36,9 @@
 
   /* ---------------- render orchestration ---------------- */
 
-  function renderAll() {
+  function renderAll(resetView) {
     GraphView.renderGraph(
-      { normalized, registry, editMode, collapsedNodes, selectedNodeId },
+      { normalized, registry, editMode, collapsedNodes, selectedNodeId, resetView: !!resetView },
       { onNodeClick: handleNodeClick, onAddChildClick: handleAddChildClick, onToggleCollapse: handleToggleCollapse }
     );
     if (selectedNodeId && normalized.nodesById[selectedNodeId]) {
@@ -78,12 +78,18 @@
       const contractNodeIds = otherNodeIds.filter(
         (id) => normalized.nodesById[id].interface && normalized.nodesById[id].interface.protocol === "contract"
       );
+      // Dependency target options are restricted to importable units
+      // (module / data-model) -- see GraphModel.addDependency's doc
+      // comment. Kept separate from otherNodeIds/contractNodeIds
+      // (Maps to and Implements still offer every node / contract
+      // nodes respectively -- unchanged).
+      const depTargetIds = GraphModel.dependencyTargetIds(normalized.nodesById);
       document.getElementById("detail-content").innerHTML =
-        GraphView.renderEditForm(node, nodeId, registry, otherNodeIds, contractNodeIds, normalized.nodesById);
+        GraphView.renderEditForm(node, nodeId, registry, otherNodeIds, contractNodeIds, normalized.nodesById, depTargetIds);
       panel.classList.add("open");
       wireEditFormHandlers(nodeId);
     } else {
-      document.getElementById("detail-content").innerHTML = GraphView.renderViewPanel(node, nodeId);
+      document.getElementById("detail-content").innerHTML = GraphView.renderViewPanel(node, nodeId, normalized.nodesById);
       panel.classList.add("open");
       document.querySelectorAll(".dep-name[data-dep]").forEach((el) => {
         el.addEventListener("click", () => {
@@ -371,6 +377,11 @@
         if (languageEl) {
           if (languageEl.value.trim()) node.interface.language = languageEl.value.trim();
           else delete node.interface.language;
+        }
+        const transportEl = document.getElementById("f-transport");
+        if (transportEl) {
+          if (transportEl.value.trim()) node.interface.transport = transportEl.value.trim();
+          else delete node.interface.transport;
         }
         const httpMethodEl = document.getElementById("f-http-method");
         if (httpMethodEl) {
@@ -662,7 +673,7 @@
     normalized = { project: projectName, backbone: backboneId, defaultBoundary: "module", nodesById };
     selectedNodeId = backboneId;
     collapsedNodes.clear();
-    renderAll();
+    renderAll(true);
     GraphView.showToast(`New graph '${projectName}' created.`, "success");
   });
 
@@ -678,7 +689,7 @@
         selectedNodeId = null;
         collapsedNodes.clear(); // stale node ids from a previous graph shouldn't linger
         document.getElementById("detail-panel").classList.remove("open");
-        renderAll();
+        renderAll(true);
         GraphView.showToast(`Loaded '${file.name}'.`, "success");
       } catch (err) {
         document.getElementById("load-error").textContent = "YAML parse error: " + err.message;
